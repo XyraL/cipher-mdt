@@ -1,0 +1,598 @@
+const SEVERITY_LABELS = {
+    low:      { label: 'Low',      color: 'var(--green)',  tag: 'tag-green'  },
+    moderate: { label: 'Moderate', color: 'var(--yellow)', tag: 'tag-yellow' },
+    high:     { label: 'High',     color: 'var(--orange)', tag: 'tag-orange' },
+    critical: { label: 'Critical', color: 'var(--red)',    tag: 'tag-red'    },
+};
+
+function loadIncidents(filter = 'all') {
+    const panel = document.getElementById('tab-incidents');
+    panel.innerHTML = `
+        <div class="panel-header">
+            <div class="panel-header-left">
+                <div class="panel-title">Incident Reports</div>
+                <div class="panel-subtitle">Officer field reports and documentation</div>
+            </div>
+            <div class="panel-actions">
+                <button class="btn btn-ghost btn-sm ${filter==='all'?'active':''}" onclick="loadIncidents('all')">All</button>
+                <button class="btn btn-ghost btn-sm ${filter==='mine'?'active':''}" onclick="loadIncidents('mine')">Mine</button>
+                <button class="btn btn-primary btn-sm" onclick="openNewIncidentModal()">+ New Report</button>
+            </div>
+        </div>
+        <div class="panel-body" id="incidents-body">
+            ${Array(4).fill(0).map(() => `<div class="card mb-2">${skeletonLines(3)}</div>`).join('')}
+        </div>`;
+
+    nuiFetch('getIncidents', filter).then(incidents => {
+        const body = document.getElementById('incidents-body');
+        if (!incidents || incidents.length === 0) {
+            body.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No incident reports found</div></div>';
+            return;
+        }
+        body.innerHTML = incidents.map(i => {
+            const sev = SEVERITY_LABELS[i.severity] || null;
+            return `
+            <div class="card mb-2" onclick="openIncidentDetail(${i.id})" style="cursor:pointer;">
+                <div class="card-header">
+                    <div class="card-title">
+                        <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📋</div>
+                        <span class="font-bold">${i.title}</span>
+                        ${sev ? `<span class="tag ${sev.tag}" style="margin-left:8px;">${sev.label}</span>` : ''}
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);">
+                        #${i.id} · By ${i.created_by_name} · ${timeAgo(i.created_at)}
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-muted);">
+                    <span>👮 ${(i.involved_officers||[]).length} officer(s)</span>
+                    <span>👤 ${(i.involved_civilians||[]).length} civilian(s)</span>
+                    <span style="margin-left:auto;" class="font-mono">${fmtDateShort(i.created_at)}</span>
+                </div>
+                ${renderRecordTags('incident', i.id, i.tags)}
+            </div>`;
+        }).join('');
+    });
+}
+
+async function openIncidentDetail(id) {
+    const panel = document.getElementById('tab-incidents');
+    // Placeholder while loading — edit buttons added once we know ownership
+    panel.innerHTML = `<div class="panel-header">
+        <div class="panel-title">Incident Report</div>
+        <div class="panel-actions" id="incident-header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">← Back</button>
+        </div>
+    </div>
+    <div class="panel-body" id="incident-detail">${Array(3).fill(0).map(()=>`<div class="card mb-2">${skeletonLines(3)}</div>`).join('')}</div>`;
+
+    const incident = await nuiFetch('getIncident', id);
+    if (!incident) {
+        document.getElementById('incident-detail').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-text">Incident not found</div></div>';
+        return;
+    }
+
+    const canEdit = MDT.officer && (
+        MDT.officer.citizenid === incident.created_by ||
+        MDT.officer.isSupervisor
+    );
+    const actions = document.getElementById('incident-header-actions');
+    const sev = SEVERITY_LABELS[incident.severity] || null;
+    if (actions && canEdit) {
+        actions.innerHTML = `
+            <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">← Back</button>
+            <button class="btn btn-ghost btn-sm" onclick="printIncidentReport(${id})">🖨 Print</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditIncidentModal(${id})">✏ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteIncident(${id})">🗑 Delete</button>`;
+    } else if (actions) {
+        actions.innerHTML = `
+            <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">← Back</button>
+            <button class="btn btn-ghost btn-sm" onclick="printIncidentReport(${id})">🖨 Print</button>`;
+    }
+
+    document.getElementById('incident-detail').innerHTML = `
+        <div class="card" style="margin-bottom:14px;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;">
+                <div>
+                    <div style="font-size:20px;font-weight:800;margin-bottom:4px;">${incident.title}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--text-muted);">
+                        <span class="font-mono">Report #${incident.id}</span>
+                        <span>By: <strong style="color:var(--text-secondary);">${incident.created_by_name}</strong></span>
+                        <span>${fmtDate(incident.created_at)}</span>
+                        ${incident.updated_at !== incident.created_at ? `<span style="color:var(--accent-2);">Updated ${timeAgo(incident.updated_at)}</span>` : ''}
+                    </div>
+                </div>
+                ${sev ? `<span class="tag ${sev.tag}" style="font-size:12px;padding:5px 12px;flex-shrink:0;">${sev.label}</span>` : ''}
+            </div>
+            <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">Narrative</div>
+            <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text-secondary);">${incident.narrative}</div>
+            ${renderRecordTags('incident', incident.id, incident.tags)}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="card">
+                <div class="card-header"><div class="card-title">Involved Civilians (${incident.involved_civilians.length})</div></div>
+                ${incident.involved_civilians.length === 0 ? '<div class="text-muted text-sm">None listed</div>' :
+                    incident.involved_civilians.map(c => `
+                        <div style="padding:7px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+                            <div>
+                                <div style="font-weight:600;font-size:13px;">${c.name} ${copyBtn(c.citizenid)}</div>
+                                <div class="text-muted text-sm font-mono">${c.citizenid}</div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="switchTab('civilians');setTimeout(()=>openCivilianProfile('${c.citizenid}'),80);">View Profile</button>
+                        </div>`).join('')}
+            </div>
+            <div class="card">
+                <div class="card-header"><div class="card-title">Involved Officers (${incident.involved_officers.length})</div></div>
+                ${incident.involved_officers.length === 0 ? '<div class="text-muted text-sm">None listed</div>' :
+                    incident.involved_officers.map(o => `
+                        <div style="padding:7px 0;border-bottom:1px solid var(--border);">
+                            <div style="font-weight:600;font-size:13px;">${o.name}</div>
+                            <div class="text-muted text-sm font-mono">${o.citizenid}</div>
+                        </div>`).join('')}
+            </div>
+        </div>
+        <div id="incident-linked-records-section"></div>`;
+
+    // Load linked arrests + citations if any
+    const linkedArrests   = incident.linked_arrests   || [];
+    const linkedCitations = incident.linked_citations || [];
+    if (linkedArrests.length > 0 || linkedCitations.length > 0) {
+        const section = document.getElementById('incident-linked-records-section');
+        if (section) {
+            section.innerHTML = `<div class="card" style="margin-top:14px;">
+                <div class="card-header"><div class="card-title">Linked Records</div></div>
+                <div id="linked-records-rows">${skeletonLines(2)}</div>
+            </div>`;
+            nuiFetch('getRecordsByIds', { arrests: linkedArrests, citations: linkedCitations }).then(records => {
+                const rows = document.getElementById('linked-records-rows');
+                if (!rows) return;
+                let html = '';
+                (records?.arrests || []).forEach(a => {
+                    html += `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                        <span class="tag tag-red">Arrest #${a.id}</span>
+                        <div style="flex:1;">
+                            <span style="font-size:12px;font-weight:600;">${a.citizenid}</span>
+                            <span class="text-muted text-sm"> · By ${a.officer_name} · ${fmtDateShort(a.created_at)}</span>
+                        </div>
+                        <span class="text-muted text-sm">${(a.charges||[]).length} charge(s)${a.fine ? ' · ' + dollarFmt(a.fine) : ''}</span>
+                    </div>`;
+                });
+                (records?.citations || []).forEach(c => {
+                    html += `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                        <span class="tag tag-yellow">Citation #${c.id}</span>
+                        <div style="flex:1;">
+                            <span style="font-size:12px;font-weight:600;">${c.citizenid}</span>
+                            <span class="text-muted text-sm"> · By ${c.officer_name} · ${fmtDateShort(c.created_at)}</span>
+                        </div>
+                        <span style="font-size:12px;color:var(--green);">${dollarFmt(c.fine)}</span>
+                    </div>`;
+                });
+                rows.innerHTML = html || '<div class="text-muted text-sm">No matching records found.</div>';
+            });
+        }
+    }
+}
+
+// ── Record Linker (link arrests / citations to an incident) ───────────────
+
+function createRecordLinker(containerId, type) {
+    const linkedKey = type === 'arrest' ? '_linkedArrests' : '_linkedCitations';
+    if (!window[linkedKey]) window[linkedKey] = [];
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = `
+        <div class="person-linker">
+            <div class="person-linker-input-row">
+                <input class="input" id="${containerId}-input"
+                    placeholder="Search by civilian name..."
+                    autocomplete="off">
+            </div>
+            <div class="person-linker-dropdown hidden" id="${containerId}-dropdown"></div>
+        </div>
+        <div class="linked-persons" id="${containerId}-linked">
+            <span style="color:var(--text-muted);font-size:11px;padding:2px 4px;">No ${type}s linked</span>
+        </div>`;
+
+    let timer = null;
+    const input = document.getElementById(`${containerId}-input`);
+    const dropdown = document.getElementById(`${containerId}-dropdown`);
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) { dropdown.classList.add('hidden'); return; }
+        timer = setTimeout(async () => {
+            const endpoint = type === 'arrest' ? 'searchArrests' : 'searchCitations';
+            const results = await nuiFetch(endpoint, { query: q });
+            if (!results || results.length === 0) {
+                dropdown.innerHTML = '<div class="person-linker-result"><span class="text-muted text-sm">No results</span></div>';
+            } else {
+                dropdown.innerHTML = results.slice(0, 8).map(r => `
+                    <div class="person-linker-result" onclick="linkRecord('${containerId}',${r.id},'${(r.civilian_name || r.citizenid).replace(/'/g,"\\'")}','${type}')">
+                        <div>
+                            <div class="person-linker-result-name">${r.civilian_name || r.citizenid}</div>
+                            <div class="person-linker-result-meta">#${r.id} · ${fmtDateShort(r.created_at)} · By ${r.officer_name}</div>
+                        </div>
+                        <span class="tag ${type === 'arrest' ? 'tag-red' : 'tag-yellow'}">${type === 'arrest' ? 'Arrest' : 'Citation'}</span>
+                    </div>`).join('');
+            }
+            dropdown.classList.remove('hidden');
+        }, 280);
+    });
+    document.addEventListener('click', (e) => {
+        if (!container.contains(e.target)) dropdown.classList.add('hidden');
+    }, { capture: true });
+}
+
+function linkRecord(containerId, id, label, type) {
+    const linkedKey = type === 'arrest' ? '_linkedArrests' : '_linkedCitations';
+    if (!window[linkedKey]) window[linkedKey] = [];
+    if (window[linkedKey].find(r => r.id === id)) {
+        document.getElementById(`${containerId}-dropdown`)?.classList.add('hidden');
+        return;
+    }
+    window[linkedKey].push({ id, label });
+    document.getElementById(`${containerId}-dropdown`)?.classList.add('hidden');
+    document.getElementById(`${containerId}-input`).value = '';
+    refreshLinkedRecordsDisplay(containerId, type);
+}
+
+function unlinkRecord(containerId, id, type) {
+    const linkedKey = type === 'arrest' ? '_linkedArrests' : '_linkedCitations';
+    window[linkedKey] = (window[linkedKey] || []).filter(r => r.id !== id);
+    refreshLinkedRecordsDisplay(containerId, type);
+}
+
+function refreshLinkedRecordsDisplay(containerId, type) {
+    const linkedKey = type === 'arrest' ? '_linkedArrests' : '_linkedCitations';
+    const list = window[linkedKey] || [];
+    const el = document.getElementById(`${containerId}-linked`);
+    if (!el) return;
+    if (list.length === 0) {
+        el.innerHTML = `<span style="color:var(--text-muted);font-size:11px;padding:2px 4px;">No ${type}s linked</span>`;
+        return;
+    }
+    const color = type === 'arrest' ? '' : 'officer-tag';
+    el.innerHTML = list.map(r => `
+        <span class="linked-person-tag ${color}">
+            #${r.id} — ${r.label}
+            <button onclick="unlinkRecord('${containerId}',${r.id},'${type}')">×</button>
+        </span>`).join('');
+}
+
+// ── Person Linker ─────────────────────────────────────────────────────────
+
+function createPersonLinker(containerId, type = 'civilian') {
+    const isCiv = type === 'civilian';
+    const linkedKey = isCiv ? '_linkedCivilians' : '_linkedOfficers';
+    if (!window[linkedKey]) window[linkedKey] = [];
+
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="person-linker">
+            <div class="person-linker-input-row">
+                <input class="input" id="${containerId}-input"
+                    placeholder="Search by name..."
+                    autocomplete="off">
+            </div>
+            <div class="person-linker-dropdown hidden" id="${containerId}-dropdown"></div>
+        </div>
+        <div class="linked-persons" id="${containerId}-linked">
+            <span style="color:var(--text-muted);font-size:11px;padding:2px 4px;">No ${isCiv ? 'civilians' : 'officers'} linked</span>
+        </div>`;
+
+    let searchTimer = null;
+    const input = document.getElementById(`${containerId}-input`);
+    const dropdown = document.getElementById(`${containerId}-dropdown`);
+
+    input.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = input.value.trim();
+        if (q.length < 2) { dropdown.classList.add('hidden'); return; }
+        searchTimer = setTimeout(async () => {
+            const endpoint = isCiv ? 'searchCivilians' : 'searchOfficers';
+            const results = await nuiFetch(endpoint, q);
+            if (!results || results.length === 0) {
+                dropdown.innerHTML = '<div class="person-linker-result"><span class="text-muted text-sm">No results</span></div>';
+            } else {
+                dropdown.innerHTML = results.slice(0, 8).map(r => `
+                    <div class="person-linker-result" onclick="linkPerson('${containerId}','${r.citizenid}','${(r.firstname ? r.firstname + ' ' + r.lastname : r.name).replace(/'/g,"\\'")}','${type}')">
+                        <div>
+                            <div class="person-linker-result-name">${r.firstname ? r.firstname + ' ' + r.lastname : r.name}</div>
+                            <div class="person-linker-result-meta">${isCiv ? (r.dob || r.citizenid) : (r.grade + ' · Badge #' + r.badge)}</div>
+                        </div>
+                        <span class="tag ${isCiv ? 'tag-blue' : 'tag-purple'}">${isCiv ? 'Civilian' : 'Officer'}</span>
+                    </div>`).join('');
+            }
+            dropdown.classList.remove('hidden');
+        }, 280);
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+        if (!container.contains(e.target)) dropdown.classList.add('hidden');
+    }, { capture: true });
+}
+
+function linkPerson(containerId, citizenid, name, type) {
+    const linkedKey = type === 'civilian' ? '_linkedCivilians' : '_linkedOfficers';
+    if (!window[linkedKey]) window[linkedKey] = [];
+
+    // Prevent duplicates
+    if (window[linkedKey].find(p => p.citizenid === citizenid)) {
+        document.getElementById(`${containerId}-dropdown`).classList.add('hidden');
+        document.getElementById(`${containerId}-input`).value = '';
+        return;
+    }
+
+    window[linkedKey].push({ citizenid, name });
+    document.getElementById(`${containerId}-dropdown`).classList.add('hidden');
+    document.getElementById(`${containerId}-input`).value = '';
+    refreshLinkedDisplay(containerId, type);
+}
+
+function unlinkPerson(containerId, citizenid, type) {
+    const linkedKey = type === 'civilian' ? '_linkedCivilians' : '_linkedOfficers';
+    window[linkedKey] = (window[linkedKey] || []).filter(p => p.citizenid !== citizenid);
+    refreshLinkedDisplay(containerId, type);
+}
+
+function refreshLinkedDisplay(containerId, type) {
+    const linkedKey = type === 'civilian' ? '_linkedCivilians' : '_linkedOfficers';
+    const list = window[linkedKey] || [];
+    const el = document.getElementById(`${containerId}-linked`);
+    if (!el) return;
+    if (list.length === 0) {
+        el.innerHTML = `<span style="color:var(--text-muted);font-size:11px;padding:2px 4px;">No ${type === 'civilian' ? 'civilians' : 'officers'} linked</span>`;
+        return;
+    }
+    el.innerHTML = list.map(p => `
+        <span class="linked-person-tag ${type === 'officer' ? 'officer-tag' : ''}">
+            ${p.name}
+            <button onclick="unlinkPerson('${containerId}','${p.citizenid}','${type}')">×</button>
+        </span>`).join('');
+}
+
+// ── New Incident Modal ────────────────────────────────────────────────────
+
+function printIncidentReport(id) {
+    nuiFetch('getIncident', id).then(incident => {
+        if (!incident) return;
+        const win = window.open('', '_blank');
+        const sev = SEVERITY_LABELS[incident.severity];
+        win.document.write(`<!DOCTYPE html><html><head><title>Incident Report #${incident.id}</title>
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 12pt; color: #111; padding: 32px; max-width: 800px; margin: 0 auto; }
+            h1 { font-size: 20pt; margin-bottom: 4px; }
+            .meta { color: #555; font-size: 10pt; margin-bottom: 24px; border-bottom: 1px solid #ccc; padding-bottom: 12px; }
+            .label { font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #555; margin-bottom: 4px; }
+            .narrative { line-height: 1.7; white-space: pre-wrap; border: 1px solid #ddd; padding: 14px; border-radius: 4px; margin-bottom: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th { background: #f0f0f0; text-align: left; padding: 8px; font-size: 10pt; }
+            td { padding: 8px; border-bottom: 1px solid #eee; font-size: 10.5pt; }
+            .badge { display: inline-block; border: 1px solid #999; border-radius: 4px; padding: 2px 8px; font-size: 9pt; font-weight: 700; }
+        </style></head><body>
+        <h1>${incident.title}</h1>
+        <div class="meta">
+            Report #${incident.id} &nbsp;|&nbsp; By: ${incident.created_by_name} &nbsp;|&nbsp; ${new Date(incident.created_at).toLocaleString()}
+            ${sev ? ` &nbsp;|&nbsp; <span class="badge">${sev.label}</span>` : ''}
+        </div>
+        <div class="label">Narrative</div>
+        <div class="narrative">${incident.narrative}</div>
+        ${incident.involved_civilians.length ? `
+        <div class="label">Involved Civilians</div>
+        <table><thead><tr><th>Name</th><th>Citizen ID</th></tr></thead><tbody>
+            ${incident.involved_civilians.map(c => `<tr><td>${c.name}</td><td>${c.citizenid}</td></tr>`).join('')}
+        </tbody></table>` : ''}
+        ${incident.involved_officers.length ? `
+        <div class="label">Involved Officers</div>
+        <table><thead><tr><th>Name</th><th>Citizen ID</th></tr></thead><tbody>
+            ${incident.involved_officers.map(o => `<tr><td>${o.name}</td><td>${o.citizenid}</td></tr>`).join('')}
+        </tbody></table>` : ''}
+        <div style="margin-top:40px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:12px;">
+            Generated by CipherMDT — ${new Date().toLocaleString()}
+        </div>
+        </body></html>`);
+        win.document.close();
+        win.print();
+    });
+}
+
+function openNewIncidentModal() {
+    window._linkedCivilians = [];
+    window._linkedOfficers = [];
+    window._linkedArrests = [];
+    window._linkedCitations = [];
+
+    const modal = createModal('New Incident Report', `
+        <div class="form-row">
+            <div class="form-group" style="flex:2;">
+                <label class="form-label">Title</label>
+                <input class="input" id="inc-title" placeholder="Brief incident title">
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Severity</label>
+                <select class="select" id="inc-severity">
+                    <option value="">— None —</option>
+                    <option value="low">Low</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Narrative</label>
+            <textarea class="textarea" id="inc-narrative" style="min-height:240px;" placeholder="Write a detailed account of the incident. Include timeline of events, actions taken, evidence collected, etc."></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Link Civilians</label>
+                <div id="inc-civ-linker"></div>
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Link Officers</label>
+                <div id="inc-off-linker"></div>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Link Arrests</label>
+                <div id="inc-arrest-linker"></div>
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Link Citations</label>
+                <div id="inc-citation-linker"></div>
+            </div>
+        </div>`,
+        async () => {
+            const title = document.getElementById('inc-title').value.trim();
+            const narrative = document.getElementById('inc-narrative').value.trim();
+            if (!title || !narrative) { showToast('Missing Info', 'Title and narrative are required.', 'error'); return; }
+
+            const severity = document.getElementById('inc-severity')?.value || '';
+            const result = await nuiFetch('createIncident', {
+                title,
+                narrative,
+                severity,
+                involved_civilians: window._linkedCivilians || [],
+                involved_officers: window._linkedOfficers || [],
+                linked_arrests:    (window._linkedArrests || []).map(r => r.id),
+                linked_citations:  (window._linkedCitations || []).map(r => r.id),
+            });
+            if (result) {
+                showToast('Report Created', `Incident #${result}`, 'success');
+                closeModal(modal);
+                loadIncidents();
+            } else {
+                showToast('Error', 'Could not create report.', 'error');
+            }
+        }, 'Submit Report');
+
+    setTimeout(() => {
+        createPersonLinker('inc-civ-linker', 'civilian');
+        createPersonLinker('inc-off-linker', 'officer');
+        createRecordLinker('inc-arrest-linker', 'arrest');
+        createRecordLinker('inc-citation-linker', 'citation');
+    }, 50);
+}
+
+function openEditIncidentModal(id) {
+    nuiFetch('getIncident', id).then(async incident => {
+        if (!incident) return;
+        window._linkedCivilians = [...(incident.involved_civilians || [])];
+        window._linkedOfficers = [...(incident.involved_officers || [])];
+
+        // Pre-fetch linked record labels so we can show them in the modal
+        const linkedArrestIds   = incident.linked_arrests   || [];
+        const linkedCitationIds = incident.linked_citations || [];
+        let prefetchedRecords = { arrests: [], citations: [] };
+        if (linkedArrestIds.length > 0 || linkedCitationIds.length > 0) {
+            prefetchedRecords = await nuiFetch('getRecordsByIds', { arrests: linkedArrestIds, citations: linkedCitationIds }) || prefetchedRecords;
+        }
+        window._linkedArrests   = prefetchedRecords.arrests.map(a => ({ id: a.id, label: a.citizenid }));
+        window._linkedCitations = prefetchedRecords.citations.map(c => ({ id: c.id, label: c.citizenid }));
+
+        const modal = createModal('Edit Incident Report', `
+            <div class="form-group">
+                <label class="form-label">Title</label>
+                <input class="input" id="inc-edit-title" value="${incident.title.replace(/"/g,'&quot;')}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Narrative</label>
+                <textarea class="textarea" id="inc-edit-narrative" style="min-height:260px;">${incident.narrative}</textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1;">
+                    <label class="form-label">Link Civilians</label>
+                    <div id="inc-edit-civ-linker"></div>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label class="form-label">Link Officers</label>
+                    <div id="inc-edit-off-linker"></div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="flex:1;">
+                    <label class="form-label">Link Arrests</label>
+                    <div id="inc-edit-arrest-linker"></div>
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label class="form-label">Link Citations</label>
+                    <div id="inc-edit-citation-linker"></div>
+                </div>
+            </div>`,
+            async () => {
+                const title = document.getElementById('inc-edit-title').value.trim();
+                const narrative = document.getElementById('inc-edit-narrative').value.trim();
+                if (!title || !narrative) { showToast('Missing Info', 'Title and narrative are required.', 'error'); return; }
+
+                const result = await nuiFetch('updateIncident', {
+                    id,
+                    title,
+                    narrative,
+                    involved_civilians: window._linkedCivilians || [],
+                    involved_officers:  window._linkedOfficers || [],
+                    linked_arrests:     (window._linkedArrests || []).map(r => r.id),
+                    linked_citations:   (window._linkedCitations || []).map(r => r.id),
+                });
+                if (result) {
+                    showToast('Report Updated', '', 'success');
+                    closeModal(modal);
+                    openIncidentDetail(id);
+                } else {
+                    showToast('Error', 'Could not update report.', 'error');
+                }
+            }, 'Save Changes');
+
+        setTimeout(() => {
+            createPersonLinker('inc-edit-civ-linker', 'civilian');
+            createPersonLinker('inc-edit-off-linker', 'officer');
+            createRecordLinker('inc-edit-arrest-linker', 'arrest');
+            createRecordLinker('inc-edit-citation-linker', 'citation');
+            setTimeout(() => {
+                refreshLinkedDisplay('inc-edit-civ-linker', 'civilian');
+                refreshLinkedDisplay('inc-edit-off-linker', 'officer');
+                refreshLinkedRecordsDisplay('inc-edit-arrest-linker', 'arrest');
+                refreshLinkedRecordsDisplay('inc-edit-citation-linker', 'citation');
+            }, 60);
+        }, 50);
+    });
+}
+
+async function deleteIncident(id) {
+    const modal = createModal('Delete Incident Report', `
+        <div class="alert alert-danger">
+            <span>⚠</span>
+            <div>
+                <strong>Permanently delete Report #${id}?</strong><br>
+                <span style="font-size:12px;">This cannot be undone. The report will be removed from the system entirely.</span>
+            </div>
+        </div>`,
+        async () => {
+            const ok = await nuiFetch('deleteIncident', id);
+            if (ok) {
+                showToast('Report Deleted', `Incident #${id} has been removed.`, 'success');
+                closeModal(modal);
+                loadIncidents();
+            } else {
+                showToast('Error', 'Could not delete report. Check your permissions.', 'error');
+            }
+        }, 'Delete Report', '🗑');
+}
+
+window.loadIncidents                = loadIncidents;
+window.openIncidentDetail           = openIncidentDetail;
+window.openNewIncidentModal         = openNewIncidentModal;
+window.openEditIncidentModal        = openEditIncidentModal;
+window.deleteIncident               = deleteIncident;
+window.printIncidentReport          = printIncidentReport;
+window.createPersonLinker           = createPersonLinker;
+window.linkPerson                   = linkPerson;
+window.unlinkPerson                 = unlinkPerson;
+window.refreshLinkedDisplay         = refreshLinkedDisplay;
+window.createRecordLinker           = createRecordLinker;
+window.linkRecord                   = linkRecord;
+window.unlinkRecord                 = unlinkRecord;
+window.refreshLinkedRecordsDisplay  = refreshLinkedRecordsDisplay;
