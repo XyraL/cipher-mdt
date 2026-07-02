@@ -108,3 +108,27 @@ lib.callback.register('cipher-mdt:server:updateCivilianNotes', function(source, 
     })
     return true
 end)
+
+-- Mugshot gallery — all civilians with a mugshot, searchable by name
+lib.callback.register('cipher-mdt:server:getMugshots', function(source, data)
+    if not IsAuthorized(source) then return nil end
+    data = data or {}
+    local where = { 'image IS NOT NULL', "image != ''" }
+    local params = {}
+
+    if data.search and #data.search >= 2 then
+        where[#where+1] = "CONCAT(firstname, ' ', lastname) LIKE ?"
+        params[#params+1] = '%' .. data.search .. '%'
+    end
+
+    local sql = [[
+        SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.image,
+               (SELECT COUNT(*) FROM mdt_arrests a WHERE a.citizenid = c.citizenid) as arrest_count,
+               (SELECT COUNT(*) FROM mdt_warrants w WHERE w.citizenid = c.citizenid AND w.status = 'active') as active_warrants
+        FROM mdt_civilians c
+        WHERE ]] .. table.concat(where, ' AND ') .. [[
+        ORDER BY c.lastname ASC, c.firstname ASC
+        LIMIT 100
+    ]]
+    return MySQL.query.await(sql, params)
+end)

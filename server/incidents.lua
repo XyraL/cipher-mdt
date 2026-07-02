@@ -94,3 +94,26 @@ lib.callback.register('cipher-mdt:server:deleteIncident', function(source, id)
     exports['cipher-mdt']:AuditLog('Incident Deleted', officer.name, 'Incident #' .. id)
     return true
 end)
+
+-- ── Case linking ───────────────────────────────────────────────────────────
+
+lib.callback.register('cipher-mdt:server:setCaseNumber', function(source, data)
+    if not IsAuthorized(source) then return false end
+    if not data.incidentId or not data.caseNumber then return false end
+    -- Trim and validate: alphanumeric + hyphens, max 50 chars
+    local cn = tostring(data.caseNumber):gsub('[^%w%-]', ''):sub(1, 50)
+    MySQL.update.await('UPDATE mdt_incidents SET case_number = ? WHERE id = ?', { cn ~= '' and cn or nil, data.incidentId })
+    return true
+end)
+
+lib.callback.register('cipher-mdt:server:getIncidentsByCase', function(source, caseNumber)
+    if not IsAuthorized(source) then return nil end
+    if not caseNumber or #caseNumber < 1 then return {} end
+    local results = MySQL.query.await([[
+        SELECT id, title, severity, created_by_name, created_at, case_number
+        FROM mdt_incidents
+        WHERE case_number = ?
+        ORDER BY created_at ASC
+    ]], { caseNumber })
+    return results
+end)

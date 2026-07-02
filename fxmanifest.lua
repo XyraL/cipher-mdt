@@ -42,6 +42,7 @@ server_scripts {
     'server/bulletins.lua',
     'server/bodycam.lua',
     'server/target.lua',
+    'server/shiftlog.lua',
 }
 
 ui_page 'html/index.html'
@@ -61,6 +62,9 @@ files {
     'html/js/panels/cad.js',
     'html/js/panels/bulletins.js',
     'html/js/panels/quickdispatch.js',
+    'html/js/panels/mugshots.js',
+    'html/js/panels/callhistory.js',
+    'html/js/panels/shiftlog.js',
     'html/js/components/namesearch.js',
 }
 

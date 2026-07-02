@@ -126,8 +126,11 @@ function onTabActivated(tab) {
         case 'citations': initCitationsPanel(); break;
         case 'penal':     loadPenalCodes(); break;
         case 'incidents':  loadIncidents(); break;
-        case 'bulletins':  loadBulletins(); break;
-        case 'cad':        loadCAD(); break;
+        case 'bulletins':   loadBulletins(); break;
+        case 'cad':         loadCAD(); break;
+        case 'mugshots':    loadMugshots(); break;
+        case 'callhistory': loadCallHistory(); break;
+        case 'shiftlog':    loadShiftLog(); break;
     }
 }
 
@@ -287,6 +290,9 @@ window.addEventListener('message', (e) => {
             if (MDT.activeTab === 'cad') loadCAD();
             break;
         }
+        case 'expiringWarrant':
+            showToast('WARRANT EXPIRING SOON', (data.data.subject || '') + ' — expires in ' + (data.data.hoursLeft || '?') + 'h', 'warning', 12000);
+            break;
         case 'playSound':
             playUISound(data.sound);
             break;

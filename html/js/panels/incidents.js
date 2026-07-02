@@ -99,6 +99,9 @@ async function openIncidentDetail(id) {
                         <span>By: <strong style="color:var(--text-secondary);">${incident.created_by_name}</strong></span>
                         <span>${fmtDate(incident.created_at)}</span>
                         ${incident.updated_at !== incident.created_at ? `<span style="color:var(--accent-2);">Updated ${timeAgo(incident.updated_at)}</span>` : ''}
+                        ${canEdit ? `<span style="cursor:pointer;color:var(--accent-2)" onclick="openCaseNumberModal(${incident.id},'${(incident.case_number||'').replace(/'/g,"\\'")}')" title="Set Case Number">
+                            ${incident.case_number ? `<strong style="color:var(--accent-2)">Case: ${incident.case_number}</strong>` : '+ Link Case #'}
+                        </span>` : (incident.case_number ? `<span style="color:var(--accent-2)">Case: ${incident.case_number}</span>` : '')}
                     </div>
                 </div>
                 ${sev ? `<span class="tag ${sev.tag}" style="font-size:12px;padding:5px 12px;flex-shrink:0;">${sev.label}</span>` : ''}
@@ -582,11 +585,62 @@ async function deleteIncident(id) {
         }, 'Delete Report', '🗑');
 }
 
+function openCaseNumberModal(incidentId, currentCase) {
+    const modal = createModal('Link Case Number',
+        `<div style="margin-bottom:12px;font-size:13px;color:var(--text-muted)">
+            Assign a case number to group related incidents together.
+            All incidents with the same case number can be viewed together.
+        </div>
+        <div class="form-group">
+            <label>Case Number</label>
+            <input class="input" id="case-num-input" placeholder="e.g. CASE-2025-001" value="${currentCase || ''}">
+        </div>
+        ${currentCase ? `<div style="margin-top:8px">
+            <button class="btn btn-ghost btn-xs" onclick="viewLinkedIncidents('${currentCase}')">View all incidents in Case ${currentCase}</button>
+        </div>` : ''}`,
+        async () => {
+            const cn = (document.getElementById('case-num-input') || {}).value || '';
+            const ok = await nuiFetch('setCaseNumber', { incidentId, caseNumber: cn.trim() });
+            if (ok) {
+                showToast('Case Linked', cn.trim() ? 'Case number set to ' + cn.trim() : 'Case number removed', 'success');
+                closeModal(modal);
+                openIncidentDetail(incidentId);
+            } else {
+                showToast('Error', 'Could not update case number', 'error');
+            }
+        }, 'Save', '◈');
+}
+
+async function viewLinkedIncidents(caseNumber) {
+    const panel = document.getElementById('tab-incidents');
+    panel.innerHTML = `<div class="panel-header">
+        <div class="panel-title">Case: ${caseNumber}</div>
+        <div class="panel-actions"><button class="btn btn-ghost btn-sm" onclick="loadIncidents()">← Back</button></div>
+    </div>
+    <div class="panel-body" id="case-incidents-list"><div class="empty-state"><div class="empty-icon">◈</div><div class="empty-text">Loading...</div></div></div>`;
+
+    const incidents = await nuiFetch('getIncidentsByCase', caseNumber);
+    const el = document.getElementById('case-incidents-list');
+    if (!el) return;
+    if (!incidents || !incidents.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><div class="empty-text">No incidents found for this case</div></div>';
+        return;
+    }
+    el.innerHTML = incidents.map(function(i) {
+        return `<div class="card mb-2" onclick="openIncidentDetail(${i.id})" style="cursor:pointer;padding:12px 16px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px">${i.title}</div>
+            <div style="font-size:12px;color:var(--text-muted)">Report #${i.id} · By ${i.created_by_name} · ${timeAgo(i.created_at)}</div>
+        </div>`;
+    }).join('');
+}
+
 window.loadIncidents                = loadIncidents;
 window.openIncidentDetail           = openIncidentDetail;
 window.openNewIncidentModal         = openNewIncidentModal;
 window.openEditIncidentModal        = openEditIncidentModal;
 window.deleteIncident               = deleteIncident;
+window.openCaseNumberModal          = openCaseNumberModal;
+window.viewLinkedIncidents          = viewLinkedIncidents;
 window.printIncidentReport          = printIncidentReport;
 window.createPersonLinker           = createPersonLinker;
 window.linkPerson                   = linkPerson;

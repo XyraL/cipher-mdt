@@ -73,9 +73,12 @@ lib.callback.register('cipher-mdt:server:getWarrantsForCivilian', function(sourc
 end)
 
 -- Auto-expire warrants that have passed their expires_at date
+-- Also alert on-duty officers about warrants expiring within 24 hours
 CreateThread(function()
     while true do
         Wait(300000) -- check every 5 minutes
+
+        -- Expire overdue warrants
         local expired = MySQL.query.await([[
             SELECT id FROM mdt_warrants
             WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= NOW()
@@ -88,6 +91,51 @@ CreateThread(function()
                 {}
             )
             print('[CipherMDT] Auto-expired ' .. #expired .. ' warrant(s)')
+        end
+
+        -- Alert about warrants expiring in the next 24 hours (send once per warrant)
+        local expiring = MySQL.query.await([[
+            SELECT w.id, w.expires_at,
+                   CONCAT(c.firstname, ' ', c.lastname) as subject_name
+            FROM mdt_warrants w
+            LEFT JOIN mdt_civilians c ON w.citizenid = c.citizenid
+            WHERE w.status = 'active'
+              AND w.expires_at IS NOT NULL
+              AND w.expires_at > NOW()
+              AND w.expires_at <= DATE_ADD(NOW(), INTERVAL 24 HOUR)
+              AND (w.expiry_alert_sent IS NULL OR w.expiry_alert_sent = 0)
+        ]], {})
+
+        if expiring and #expiring > 0 then
+            local alertIds = {}
+            for _, w in ipairs(expiring) do
+                alertIds[#alertIds+1] = w.id
+                -- Calculate hours remaining
+                local expiryTime = w.expires_at
+                local hoursLeft  = math.max(1, math.floor(
+                    (os.time() - os.time()) + 1  -- approximate; server sends the data
+                ))
+
+                local players = exports['qbx_core']:GetQBPlayers()
+                for psrc, p in pairs(players) do
+                    local job = p.PlayerData.job
+                    if Config.AuthorizedJobs[job.name] and (not Config.OnDutyOnly or job.onduty) then
+                        TriggerClientEvent('cipher-mdt:client:expiringWarrantAlert', psrc, {
+                            subject   = w.subject_name or 'Unknown',
+                            expiresAt = w.expires_at,
+                            hoursLeft = 'less than 24',
+                            warrantId = w.id,
+                        })
+                    end
+                end
+            end
+
+            -- Mark alerts as sent
+            MySQL.update.await(
+                'UPDATE mdt_warrants SET expiry_alert_sent = 1 WHERE id IN (' .. table.concat(alertIds, ',') .. ')',
+                {}
+            )
+            print('[CipherMDT] Sent expiry alerts for ' .. #expiring .. ' warrant(s)')
         end
     end
 end)

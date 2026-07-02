@@ -48,18 +48,25 @@ AddEventHandler('gameEventTriggered', function(name, args)
     SendDispatch('SHOTS_FIRED', 'Shots fired reported in the area.', coords)
 end)
 
--- Fight / assault detection via animation
+-- Fight / assault detection — requires sustained melee combat to avoid
+-- single-punch false positives (2 consecutive 3s checks = ~6s of fighting)
 local _lastFightAlert = 0
+local _fightTicks     = 0
 CreateThread(function()
     while true do
         Wait(3000)
-        if IsSuppr('FIGHT') then goto continue end
-        local now   = GetGameTimer()
-        local ped   = PlayerPedId()
-        if IsPedInMeleeCombat(ped) and now - _lastFightAlert > 30000 then
-            _lastFightAlert = now
-            local coords = GetEntityCoords(ped)
-            SendDispatch('FIGHT', 'Physical altercation reported.', coords)
+        if IsSuppr('FIGHT') then _fightTicks = 0; goto continue end
+        local ped = PlayerPedId()
+        if IsPedInMeleeCombat(ped) then
+            _fightTicks = _fightTicks + 1
+            local now = GetGameTimer()
+            if _fightTicks >= 2 and now - _lastFightAlert > 30000 then
+                _lastFightAlert = now
+                _fightTicks     = 0
+                SendDispatch('FIGHT', 'Physical altercation reported.', GetEntityCoords(ped))
+            end
+        else
+            _fightTicks = 0
         end
         ::continue::
     end

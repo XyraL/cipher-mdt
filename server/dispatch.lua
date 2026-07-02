@@ -379,3 +379,66 @@ AddEventHandler('cipher-mdt:server:panicButton', function(data)
     exports['cipher-mdt']:AuditLog('PANIC BUTTON', name, 'Badge #' .. badge .. ' at ' .. street)
     exports['cipher-mdt']:LogBodyCam(src, 'PANIC_BUTTON', 'Location: ' .. street)
 end)
+
+-- Backup request — lower urgency than panic, creates a BACKUP_REQUEST call
+RegisterNetEvent('cipher-mdt:server:backupRequest')
+AddEventHandler('cipher-mdt:server:backupRequest', function(data)
+    local src    = source
+    local player = exports['qbx_core']:GetPlayer(src)
+    if not player then return end
+    local pd = player.PlayerData
+    if not Config.AuthorizedJobs[pd.job.name] then return end
+
+    local name   = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname
+    local badge  = MySQL.scalar.await('SELECT badge FROM mdt_officers WHERE citizenid = ?', { pd.citizenid }) or '???'
+    local street = data.street or 'Unknown Location'
+
+    local dateStr = os.date('%Y%m%d')
+    local count   = MySQL.scalar.await(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(call_number,'-',-1) AS UNSIGNED)),0)+1 FROM mdt_cad_calls WHERE DATE(created_at)=CURDATE()") or 1
+    local callNumber = string.format('CAD-%s-%03d', dateStr, count)
+
+    local callId = MySQL.insert.await([[
+        INSERT INTO mdt_cad_calls (call_number, call_type, description, location, coords, status, caller_name, caller_id, created_at)
+        VALUES (?, 'BACKUP_REQUEST', ?, ?, ?, 'active', ?, ?, NOW())
+    ]], {
+        callNumber,
+        'BACKUP REQUESTED — ' .. name .. ' (Badge #' .. badge .. ')',
+        street,
+        json.encode(data),
+        name,
+        pd.citizenid,
+    })
+
+    local callData = {
+        id          = callId,
+        call_number = callNumber,
+        call_type   = 'BACKUP REQUEST',
+        icon        = '🆘',
+        description = 'BACKUP REQUESTED — ' .. name .. ' (Badge #' .. badge .. ')',
+        location    = street,
+        coords      = data,
+        status      = 'active',
+        caller_name = name,
+        units       = {},
+        created_at  = os.date('%Y-%m-%dT%H:%M:%SZ'),
+    }
+
+    local players = exports['qbx_core']:GetQBPlayers()
+    for psrc, p in pairs(players) do
+        if Config.AuthorizedJobs[p.PlayerData.job.name] then
+            TriggerClientEvent('cipher-mdt:client:newCall', psrc, callData)
+            TriggerClientEvent('cipher-mdt:client:dispatchAlert', psrc, {
+                icon        = '🆘',
+                title       = 'BACKUP REQUEST',
+                description = 'BACKUP REQUESTED — ' .. name .. ' (Badge #' .. badge .. ')',
+                location    = street,
+                coords      = data,
+                callNumber  = callNumber,
+                callId      = callId,
+            })
+        end
+    end
+
+    exports['cipher-mdt']:AuditLog('BACKUP REQUEST', name, 'Badge #' .. badge .. ' at ' .. street)
+end)

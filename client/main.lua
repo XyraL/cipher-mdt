@@ -221,6 +221,36 @@ RegisterCommand('cipher_mdt_quickdispatch', function()
     OpenQuickDispatch()
 end, false)
 
+-- Backup request — sends an urgent dispatch call with officer's location
+RegisterKeyMapping('cipher_mdt_backup', 'CipherMDT: Request Backup', 'keyboard', 'F12')
+RegisterCommand('cipher_mdt_backup', function()
+    local pd = exports['qbx_core']:GetPlayerData()
+    if not pd or not Config.AuthorizedJobs[pd.job.name] then return end
+    if Config.OnDutyOnly and not pd.job.onduty then return end
+    local ped    = PlayerPedId()
+    local coords = GetEntityCoords(ped)
+    local streetHash, _ = GetStreetNameAtCoord(coords.x, coords.y, coords.z)
+    local street = GetStreetNameFromHashKey(streetHash)
+    TriggerServerEvent('cipher-mdt:server:backupRequest', {
+        x = coords.x, y = coords.y, z = coords.z,
+        street = street,
+    })
+    lib.notify({ title = 'Backup Requested', description = 'Broadcast sent to all units.', type = 'success', duration = 5000 })
+end, false)
+
+-- Expiring warrant alert receiver
+RegisterNetEvent('cipher-mdt:client:expiringWarrantAlert', function(data)
+    lib.notify({
+        title       = '⚖ WARRANT EXPIRING SOON',
+        description = (data.subject or 'Unknown') .. ' — expires in ' .. (data.hoursLeft or '?') .. 'h',
+        type        = 'warning',
+        duration    = 12000,
+    })
+    if mdtOpen then
+        SendNUIMessage({ action = 'expiringWarrant', data = data })
+    end
+end)
+
 -- NUI: player pressed Esc or responded
 RegisterNUICallback('qdClosed', function(_, cb)
     qdOpen = false

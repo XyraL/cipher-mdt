@@ -19,6 +19,10 @@
 -- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS linked_citations  JSON         DEFAULT NULL;
 -- v1.3 → v1.4
 -- ALTER TABLE mdt_cad_calls ADD COLUMN IF NOT EXISTS call_type VARCHAR(100) NOT NULL DEFAULT '' AFTER call_number;
+-- v1.4 → v1.5
+-- ALTER TABLE mdt_warrants  ADD COLUMN IF NOT EXISTS expiry_alert_sent TINYINT(1)  DEFAULT 0;
+-- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS case_number       VARCHAR(50)  DEFAULT NULL;
+-- CREATE TABLE IF NOT EXISTS mdt_shift_log ... (see below)
 
 CREATE TABLE IF NOT EXISTS `mdt_officers` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -62,6 +66,7 @@ CREATE TABLE IF NOT EXISTS `mdt_warrants` (
     `cleared_by` VARCHAR(50) DEFAULT NULL,
     `cleared_at` TIMESTAMP NULL DEFAULT NULL,
     `expires_at` TIMESTAMP NULL DEFAULT NULL,
+    `expiry_alert_sent` TINYINT(1) DEFAULT 0,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_citizenid` (`citizenid`),
     KEY `idx_status` (`status`)
@@ -122,13 +127,15 @@ CREATE TABLE IF NOT EXISTS `mdt_incidents` (
     `involved_officers` JSON DEFAULT NULL,
     `linked_arrests` JSON DEFAULT NULL,
     `linked_citations` JSON DEFAULT NULL,
+    `case_number` VARCHAR(50) DEFAULT NULL,
     `severity` VARCHAR(20) DEFAULT NULL,
     `tags` JSON DEFAULT NULL,
     `created_by` VARCHAR(50) NOT NULL,
     `created_by_name` VARCHAR(100) NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY `idx_created_by` (`created_by`)
+    KEY `idx_created_by` (`created_by`),
+    KEY `idx_case_number` (`case_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `mdt_penal_codes` (
@@ -232,6 +239,19 @@ CREATE TABLE IF NOT EXISTS `mdt_bulletins` (
     `is_archived`     TINYINT(1)      DEFAULT 0,
     `created_at`      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_active (`is_archived`, `expires_at`, `pinned`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Shift Log ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_shift_log` (
+    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+    `citizenid`        VARCHAR(50)  NOT NULL,
+    `officer_name`     VARCHAR(100) NOT NULL,
+    `badge`            VARCHAR(20)  DEFAULT NULL,
+    `clock_in`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `clock_out`        TIMESTAMP    NULL DEFAULT NULL,
+    `duration_minutes` INT          DEFAULT NULL,
+    KEY `idx_citizenid` (`citizenid`),
+    KEY `idx_clock_in`  (`clock_in`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── Audit Log ───────────────────────────────────────────────────────────────

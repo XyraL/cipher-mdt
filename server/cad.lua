@@ -193,3 +193,37 @@ lib.callback.register('cipher-mdt:server:getCallHistory', function(source)
     end
     return calls
 end)
+
+-- Searchable callout history (all statuses, with filters)
+lib.callback.register('cipher-mdt:server:searchCallHistory', function(source, data)
+    if not IsAuthorized(source) then return nil end
+    data = data or {}
+    local where, params = {}, {}
+
+    if data.callType and #data.callType >= 2 then
+        where[#where+1] = 'call_type LIKE ?'
+        params[#params+1] = '%' .. data.callType .. '%'
+    end
+    if data.unit and #data.unit >= 2 then
+        where[#where+1] = 'JSON_SEARCH(LOWER(units), "one", LOWER(?)) IS NOT NULL'
+        params[#params+1] = '%' .. data.unit .. '%'
+    end
+    if data.status and #data.status > 0 then
+        where[#where+1] = 'status = ?'
+        params[#params+1] = data.status
+    end
+    if data.dateFrom and #data.dateFrom > 0 then
+        where[#where+1] = 'DATE(created_at) >= ?'
+        params[#params+1] = data.dateFrom
+    end
+    if data.dateTo and #data.dateTo > 0 then
+        where[#where+1] = 'DATE(created_at) <= ?'
+        params[#params+1] = data.dateTo
+    end
+
+    local sql = 'SELECT id, call_number, call_type, description, location, status, caller_name, priority, created_at, updated_at FROM mdt_cad_calls'
+    if #where > 0 then sql = sql .. ' WHERE ' .. table.concat(where, ' AND ') end
+    sql = sql .. ' ORDER BY created_at DESC LIMIT 100'
+
+    return MySQL.query.await(sql, params)
+end)
