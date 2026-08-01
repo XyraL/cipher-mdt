@@ -1,10 +1,10 @@
 <h1 align="center">Cipher MDT</h1>
 
-<p align="center">A full police MDT for <strong>QBox</strong> and <strong>QBCore</strong> — live CAD dispatch, civilian records, warrants, BOLOs and supervisor audit.</p>
+<p align="center">A full police MDT for <strong>QBox</strong> — live CAD dispatch, civilian records, warrants, BOLOs and supervisor audit.</p>
 
 <p align="center">
   <a href="https://github.com/XyraL/cipher-mdt/releases"><img src="https://img.shields.io/github/v/release/XyraL/cipher-mdt?style=flat-square&color=70baff&label=release" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/framework-QBox%20%7C%20QBCore-55dcff?style=flat-square" alt="framework">
+  <img src="https://img.shields.io/badge/framework-QBox-55dcff?style=flat-square" alt="framework">
   <img src="https://img.shields.io/badge/price-free-30d158?style=flat-square" alt="price">
   <a href="https://xyralscripts.dev/docs-cipher-mdt"><img src="https://img.shields.io/badge/docs-xyralscripts.dev-a889ff?style=flat-square" alt="docs"></a>
   <a href="https://discord.gg/XRURAw4TM2"><img src="https://img.shields.io/badge/support-discord-5865F2?style=flat-square" alt="support"></a>
