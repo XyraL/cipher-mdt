@@ -1,6 +1,23 @@
-# CipherMDT
+<h1 align="center">Cipher MDT</h1>
 
-A full-featured Police MDT (Mobile Data Terminal) for QBox / QBCore servers. Includes live CAD dispatch, civilian records, arrests, citations, incidents, warrants, BOLOs, penal codes, a department bulletin board, body camera logging, and a supervisor audit log — all in a polished dark-themed UI.
+<p align="center">A full police MDT for <strong>QBox</strong> and <strong>QBCore</strong> — live CAD dispatch, civilian records, warrants, BOLOs and supervisor audit.</p>
+
+<p align="center">
+  <a href="https://github.com/XyraL/cipher-mdt/releases"><img src="https://img.shields.io/github/v/release/XyraL/cipher-mdt?style=flat-square&color=70baff&label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/framework-QBox%20%7C%20QBCore-55dcff?style=flat-square" alt="framework">
+  <img src="https://img.shields.io/badge/price-free-30d158?style=flat-square" alt="price">
+  <a href="https://xyralscripts.dev/docs-cipher-mdt"><img src="https://img.shields.io/badge/docs-xyralscripts.dev-a889ff?style=flat-square" alt="docs"></a>
+  <a href="https://discord.gg/XRURAw4TM2"><img src="https://img.shields.io/badge/support-discord-5865F2?style=flat-square" alt="support"></a>
+</p>
+
+<p align="center">
+  <a href="https://xyralscripts.dev/cipher-mdt">Website</a> &nbsp;·&nbsp;
+  <a href="https://xyralscripts.dev/docs-cipher-mdt">Setup guide</a> &nbsp;·&nbsp;
+  <a href="https://github.com/XyraL/cipher-mdt/releases">Releases</a> &nbsp;·&nbsp;
+  <a href="https://discord.gg/XRURAw4TM2">Discord</a>
+</p>
+
+<!-- SCREENSHOTS: drop 2-3 in-game shots here once captured -->
 
 ---
 
@@ -267,6 +284,32 @@ exports['cipher-mdt']:CreateDispatchCall({ callType, description, coords, ... })
 
 ---
 
+Released under the MIT License. Free to use, modify, and redistribute with attribution.
+
+---
+
+## Documentation
+
+Full setup guide, requirements and troubleshooting:
+**[xyralscripts.dev/docs-cipher-mdt](https://xyralscripts.dev/docs-cipher-mdt)**
+
+## Support
+
+- **Found a bug?** [Open an issue](https://github.com/XyraL/cipher-mdt/issues)
+- **Need setup help?** [Join the Discord](https://discord.gg/XRURAw4TM2) — check the setup guide first, it usually has the answer
+
+## The rest of the Cipher line
+
+All free, all source-available.
+
+| Script | What it is |
+|---|---|
+| **[Cipher](https://github.com/XyraL/cipher)** | modular criminal device for QBox and QBCore — gang ops, blackmarket and boosting in one encrypted tablet. |
+| **[Cipher Admin](https://github.com/XyraL/cipher-admin)** | advanced admin suite for QBox and QBCore — player management, bans, reports, inventory tools and entity inspection. |
+| **[Cipher Drone](https://github.com/XyraL/cipher-drone)** | deployable police drone for QBox and QBCore — smooth flight, thermal, spotlight, tracker darts and real counterplay. |
+| **[Cipher Trucking](https://github.com/XyraL/cipher-trucking)** | civilian trucking job for QBox and QBCore — live route map, truck ownership, fuel and maintenance, and companies. |
+
 ## License
 
-Released under the MIT License. Free to use, modify, and redistribute with attribution.
+Free to use on any server you own or operate, including commercial ones.
+**Do not redistribute or resell** — see [LICENSE](LICENSE) for the full terms.
