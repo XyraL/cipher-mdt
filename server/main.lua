@@ -21,6 +21,8 @@ local function GetOfficerInfo(src)
     local player = GetPlayer(src)
     if not player then return nil end
     local pd = player.PlayerData
+    local deptKey = Dept.OfJob(pd.job.name)
+    local deptCfg = deptKey and Config.Departments[deptKey] or nil
     return {
         citizenid = pd.citizenid,
         name = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname,
@@ -28,7 +30,31 @@ local function GetOfficerInfo(src)
         grade = pd.job.grade.level,
         gradeLabel = pd.job.grade.name,
         onduty = pd.job.onduty,
+        -- Department context — drives the sidebar, theming and every permission check
+        department      = deptKey,
+        departmentLabel = deptCfg and deptCfg.label or 'Unknown',
+        departmentShort = deptCfg and deptCfg.short or '--',
+        departmentColor = deptCfg and deptCfg.color or '#6366f1',
+        departmentIcon  = deptCfg and deptCfg.icon or '⬡',
+        panels          = Dept.PanelsOfJob(pd.job.name),
     }
+end
+
+-- Panel-level permission gate. Every department-specific callback calls this
+-- instead of IsAuthorized, so a job can never reach data its department's
+-- panel list doesn't include — even by crafting the NUI request by hand.
+local function HasPanel(src, panel)
+    if not IsAuthorized(src) then return false end
+    local player = GetPlayer(src)
+    return Dept.HasPanel(player.PlayerData.job.name, panel)
+end
+
+-- Is this player a supervisor within their own department?
+local function IsSupervisor(src)
+    local player = GetPlayer(src)
+    if not player then return false end
+    local pd = player.PlayerData
+    return pd.job.grade.level >= Dept.SupervisorGrade(pd.job.name)
 end
 
 -- Audit log helper — saves to DB and optionally posts to Discord webhook
@@ -91,6 +117,8 @@ exports('IsAuthorized', IsAuthorized)
 exports('GetOfficerInfo', GetOfficerInfo)
 exports('AuditLog', AuditLog)
 exports('GetPlayer', GetPlayer)
+exports('HasPanel', HasPanel)
+exports('IsSupervisor', IsSupervisor)
 
 -- Search connected players by character name (replaces CID lookup in forms)
 lib.callback.register('cipher-mdt:server:searchPlayersByName', function(source, query)
@@ -160,7 +188,7 @@ end)
 lib.callback.register('cipher-mdt:server:open', function(source)
     if not IsAuthorized(source) then return nil end
     local officer = GetOfficerInfo(source)
-    officer.isSupervisor = officer.grade >= Config.SupervisorGrade
+    officer.isSupervisor = officer.grade >= Dept.SupervisorGrade(officer.job)
 
     -- Body cam: log MDT open
     if Config.BodyCam.Enabled then

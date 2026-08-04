@@ -1,12 +1,80 @@
 Config = {}
 
--- Jobs that can access the MDT
-Config.AuthorizedJobs = {
-    ['police'] = true,
-    ['sheriff'] = true,
-    ['swat'] = true,
-    ['statepolice'] = true,
+-- ═══════════════════════════════════════════════════════════════════════════
+--  DEPARTMENTS
+--  Each department maps a set of jobs to the panels those jobs can open.
+--  `panels` is the single source of truth for access: the sidebar is built
+--  from it, and every server callback re-checks it. Remove a panel here and
+--  it disappears from the UI *and* stops answering.
+--
+--  Panel keys — shared:  dashboard · roster · map · civilians · cad
+--                        callhistory · bulletins · shiftlog
+--               police:  vehicles · warrants · bolos · arrests · citations
+--                        incidents · penal · mugshots
+--               ems:     pcr · medhistory · narclog
+--               fire:    fireincidents · hazmat · apparatus
+-- ═══════════════════════════════════════════════════════════════════════════
+Config.Departments = {
+    police = {
+        label     = 'Police Department',
+        short     = 'PD',
+        color     = '#6366f1',   -- NUI accent
+        blipColor = 3,           -- GTA blip colour (3 = blue)
+        icon      = '⬡',
+        jobs      = { 'police', 'sheriff', 'swat', 'statepolice' },
+        supervisorGrade = 3,
+        panels = {
+            'dashboard', 'roster', 'map',
+            'civilians', 'vehicles',
+            'warrants', 'bolos', 'arrests', 'citations', 'incidents', 'penal',
+            'cad', 'callhistory', 'bulletins',
+            'mugshots', 'shiftlog',
+        },
+    },
+
+    ems = {
+        label     = 'Emergency Medical Services',
+        short     = 'EMS',
+        color     = '#22c55e',
+        blipColor = 5,           -- yellow
+        icon      = '✚',
+        jobs      = { 'ambulance', 'ems' },
+        supervisorGrade = 3,
+        panels = {
+            'dashboard', 'roster', 'map',
+            'civilians',
+            'pcr', 'medhistory', 'narclog',
+            'cad', 'callhistory', 'bulletins',
+            'shiftlog',
+        },
+    },
+
+    fire = {
+        label     = 'Fire Department',
+        short     = 'FD',
+        color     = '#ef4444',
+        blipColor = 1,           -- red
+        icon      = '🔥',
+        jobs      = { 'fire', 'firefighter' },
+        supervisorGrade = 3,
+        panels = {
+            'dashboard', 'roster', 'map',
+            'civilians',
+            'fireincidents', 'hazmat', 'apparatus',
+            'cad', 'callhistory', 'bulletins',
+            'shiftlog',
+        },
+    },
 }
+
+-- Built from Config.Departments below — do not edit by hand.
+-- Maps job name → department key, e.g. Config.AuthorizedJobs['ambulance'] == 'ems'.
+Config.AuthorizedJobs = {}
+for dept, cfg in pairs(Config.Departments) do
+    for _, job in ipairs(cfg.jobs or {}) do
+        Config.AuthorizedJobs[job] = dept
+    end
+end
 
 -- Minimum job grade to access MDT (0 = all grades)
 Config.MinGrade = 0
@@ -46,8 +114,47 @@ Config.CADBlip = {
     Scale = 0.8,
 }
 
+-- ═══════════════════════════════════════════════════════════════════════════
+--  LIVE UNIT BLIPS
+--  Police, EMS and Fire see each other on the map, coloured per department.
+--  Set Enabled = false to turn the whole system off (no position broadcast,
+--  no blips) if you'd rather run your own blip script.
+-- ═══════════════════════════════════════════════════════════════════════════
+Config.Blips = {
+    Enabled = true,
+
+    -- Which jobs broadcast a position and appear on the map.
+    -- nil  → every job listed in Config.Departments (the usual choice)
+    -- list → explicit override, e.g. { 'police', 'ambulance' }
+    TrackedJobs = nil,
+
+    -- true  → all departments see each other (PD sees EMS sees Fire)
+    -- false → you only see units from your own department
+    CrossDepartment = true,
+
+    -- Only show units who are on duty. Independent of Config.OnDutyOnly so an
+    -- off-duty officer can still read the MDT without appearing on the map.
+    OnDutyOnly = true,
+
+    UpdateInterval = 2000,  -- ms between position broadcasts (2000 is plenty)
+    StaleAfter     = 15,    -- seconds without an update before a unit drops off
+
+    Scale      = 0.82,
+    ShortRange = false,     -- false = visible at every map zoom level
+    ShowName   = true,
+    ShowBadge  = true,
+    ShowVehicle= true,      -- append [VEH] / [AIR] / [BOAT] to the label
+
+    -- Per-department colour override. Falls back to the department's
+    -- blipColor in Config.Departments when a job isn't listed here.
+    JobColors = {
+        -- ['swat'] = 27,   -- example: give SWAT its own colour
+    },
+}
+
 -- Grade level (numeric) required for supervisor features:
--- editing penal codes, deleting incidents, marking citations paid, viewing body cams
+-- editing penal codes, deleting incidents, marking citations paid, viewing body cams.
+-- Per-department overrides live in Config.Departments[dept].supervisorGrade.
 Config.SupervisorGrade = 3
 
 -- Fine deduction from player bank accounts

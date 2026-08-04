@@ -87,92 +87,122 @@ lib.callback.register('cipher-mdt:server:updateOfficerProfile', function(source,
     MySQL.update.await('UPDATE mdt_officers SET badge = ?, callsign = ? WHERE citizenid = ?', {
         data.badge, data.callsign, officer.citizenid
     })
+    -- Drop the cached badge so live blip labels pick the new one up.
+    exports['cipher-mdt']:InvalidateBadgeCache(officer.citizenid)
     return true
 end)
 
 
--- Unit position store (in-memory, updated via broadcast)
-local _unitPositions = {}
+-- ═══════════════════════════════════════════════════════════════════════════
+--  LIVE UNIT TRACKING
+--  One in-memory store of every tracked unit's position, rebroadcast to
+--  everyone allowed to see them. Which jobs take part and whether departments
+--  see each other is decided by Dept.IsTracked / Dept.CanSeeUnit.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local _unitPositions = {}   -- [citizenid] = unit record
+local _badgeCache    = {}   -- [citizenid] = badge; avoids a query every tick
+
+local function GetBadge(citizenid)
+    local cached = _badgeCache[citizenid]
+    if cached ~= nil then return cached end
+    local badge = MySQL.scalar.await('SELECT badge FROM mdt_officers WHERE citizenid = ?', { citizenid })
+    _badgeCache[citizenid] = badge or 'N/A'
+    return _badgeCache[citizenid]
+end
+
+-- Called after a profile edit so the blip label picks up the new badge.
+local function InvalidateBadge(citizenid) _badgeCache[citizenid] = nil end
+
+-- Units seen recently enough to still be considered live.
+local function LiveUnits()
+    local staleAfter = (Config.Blips or {}).StaleAfter or 15
+    local now, units = os.time(), {}
+    for _, u in pairs(_unitPositions) do
+        if now - u.ts < staleAfter then units[#units + 1] = u end
+    end
+    return units
+end
+
+-- Push the unit list to every connected player, filtered to what that
+-- player's department is allowed to see.
+function BroadcastUnits()
+    if not (Config.Blips or {}).Enabled then return end
+    local units = LiveUnits()
+    for psrc, p in pairs(exports['qbx_core']:GetQBPlayers()) do
+        local viewerJob = p.PlayerData.job and p.PlayerData.job.name
+        if Dept.IsTracked(viewerJob) then
+            local visible = {}
+            for _, u in ipairs(units) do
+                if Dept.CanSeeUnit(viewerJob, u.job) then visible[#visible + 1] = u end
+            end
+            TriggerClientEvent('cipher-mdt:client:updateBlips', psrc, visible)
+        end
+    end
+end
 
 RegisterNetEvent('cipher-mdt:server:broadcastPosition')
 AddEventHandler('cipher-mdt:server:broadcastPosition', function(data)
+    if not (Config.Blips or {}).Enabled then return end
     local src    = source
     local player = exports['qbx_core']:GetPlayer(src)
-    if not player then return end
+    if not player or type(data) ~= 'table' then return end
+
     local pd = player.PlayerData
-    if not Config.AuthorizedJobs[pd.job.name] then return end
-    if Config.OnDutyOnly and not pd.job.onduty then
+    if not Dept.IsTracked(pd.job.name) then return end
+    if (Config.Blips or {}).OnDutyOnly ~= false and not pd.job.onduty then
         _unitPositions[pd.citizenid] = nil
-        return
+        return BroadcastUnits()
     end
 
-    -- data may be just coords table or full table with sprite/heading
-    local coords  = (type(data) == 'table' and data.x) and data or {}
-    local sprite  = data.sprite  or 1
-    local heading = data.heading or 0
-
-    local badge = MySQL.scalar.await('SELECT badge FROM mdt_officers WHERE citizenid = ?', { pd.citizenid })
+    local prev = _unitPositions[pd.citizenid]
     _unitPositions[pd.citizenid] = {
-        citizenid = pd.citizenid,
-        name      = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname,
-        job       = pd.job.name,
-        badge     = badge or 'N/A',
-        coords    = { x = data.x or 0, y = data.y or 0, z = data.z or 0 },
-        sprite    = sprite,
-        heading   = heading,
-        ts        = os.time(),
+        citizenid  = pd.citizenid,
+        name       = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname,
+        job        = pd.job.name,
+        department = Dept.OfJob(pd.job.name),
+        badge      = GetBadge(pd.citizenid),
+        coords     = { x = data.x or 0, y = data.y or 0, z = data.z or 0 },
+        sprite     = data.sprite or 1,
+        heading    = data.heading or 0,
+        status     = prev and prev.status or nil,
+        ts         = os.time(),
     }
 
-    -- Push fresh list to all authorized units every broadcast cycle
-    local units = {}
-    for _, u in pairs(_unitPositions) do
-        if os.time() - u.ts < 15 then units[#units+1] = u end
-    end
-    local players = exports['qbx_core']:GetQBPlayers()
-    for psrc, p in pairs(players) do
-        if Config.AuthorizedJobs[p.PlayerData.job.name] then
-            TriggerClientEvent('cipher-mdt:client:updateBlips', psrc, units)
-        end
-    end
+    BroadcastUnits()
 end)
 
--- Callback for NUI map to pull current units
+-- Callback for the NUI map to pull the current picture on demand.
 lib.callback.register('cipher-mdt:server:getUnits', function(source)
     if not IsAuthorized(source) then return {} end
-    local units = {}
-    for _, u in pairs(_unitPositions) do
-        if os.time() - u.ts < 30 then units[#units+1] = u end
+    local player = exports['qbx_core']:GetPlayer(source)
+    local viewerJob = player and player.PlayerData.job and player.PlayerData.job.name
+    local out = {}
+    for _, u in ipairs(LiveUnits()) do
+        if Dept.CanSeeUnit(viewerJob, u.job) then out[#out + 1] = u end
     end
-    return units
+    return out
 end)
 
--- Clear a unit's position (called when going off-duty or disconnecting)
+-- Clear a unit's position (going off duty or disconnecting)
 RegisterNetEvent('cipher-mdt:server:clearPosition')
 AddEventHandler('cipher-mdt:server:clearPosition', function()
-    local src    = source
-    local player = exports['qbx_core']:GetPlayer(src)
+    local player = exports['qbx_core']:GetPlayer(source)
     if not player then return end
-    local cid = player.PlayerData.citizenid
-    _unitPositions[cid] = nil
-    -- Rebroadcast so their blip disappears for everyone
-    local units = {}
-    for _, u in pairs(_unitPositions) do
-        if os.time() - u.ts < 15 then units[#units+1] = u end
-    end
-    local players = exports['qbx_core']:GetQBPlayers()
-    for psrc, p in pairs(players) do
-        if Config.AuthorizedJobs[p.PlayerData.job.name] then
-            TriggerClientEvent('cipher-mdt:client:updateBlips', psrc, units)
-        end
-    end
+    _unitPositions[player.PlayerData.citizenid] = nil
+    BroadcastUnits()
 end)
 
 AddEventHandler('playerDropped', function()
-    local src    = source
-    local player = exports['qbx_core']:GetPlayer(src)
+    local player = exports['qbx_core']:GetPlayer(source)
     if not player then return end
-    _unitPositions[player.PlayerData.citizenid] = nil
+    local cid = player.PlayerData.citizenid
+    _unitPositions[cid] = nil
+    _badgeCache[cid]    = nil
+    BroadcastUnits()
 end)
+
+exports('InvalidateBadgeCache', InvalidateBadge)
 
 -- Unit status update (10-8, 10-6, Code 4, etc.)
 lib.callback.register('cipher-mdt:server:setUnitStatus', function(source, status)
@@ -183,17 +213,7 @@ lib.callback.register('cipher-mdt:server:setUnitStatus', function(source, status
         _unitPositions[officer.citizenid].status = status
     end
     MySQL.update.await('UPDATE mdt_officers SET status = ? WHERE citizenid = ?', { status, officer.citizenid })
-    -- Rebroadcast so roster updates live
-    local units = {}
-    for _, u in pairs(_unitPositions) do
-        if os.time() - u.ts < 15 then units[#units+1] = u end
-    end
-    local players = exports['qbx_core']:GetQBPlayers()
-    for psrc, p in pairs(players) do
-        if Config.AuthorizedJobs[p.PlayerData.job.name] then
-            TriggerClientEvent('cipher-mdt:client:updateBlips', psrc, units)
-        end
-    end
+    BroadcastUnits()   -- rebroadcast so the roster/map update live
     return true
 end)
 
