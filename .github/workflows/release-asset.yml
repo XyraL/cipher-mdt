@@ -1,0 +1,57 @@
+# Attaches a ready-to-drop .zip to every published release.
+#
+# Two reasons this exists:
+#
+#  1. GitHub only reports download_count for UPLOADED assets. The automatic
+#     "Source code (zip)" link is not counted at all, so without this there is
+#     no download figure to show anywhere.
+#
+#  2. That automatic zip contains the whole repository — .github, .gitignore,
+#     CHANGELOG.md — and unpacks to a folder named cipher-mdt-1.0.0
+#     rather than cipher-mdt. Server owners then have to rename it or the
+#     resource will not start. This ships exactly what belongs in resources/.
+name: Attach release zip
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the resource zip
+        run: |
+          RESOURCE="${GITHUB_REPOSITORY##*/}"
+          TAG="${GITHUB_REF_NAME}"
+
+          # Stage into a folder named exactly as the resource must be on the
+          # server, so unzipping into resources/ just works.
+          mkdir -p "staging/$RESOURCE"
+          rsync -a ./ "staging/$RESOURCE/" \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'staging' \
+            --exclude 'node_modules' \
+            --exclude '.gitignore' \
+            --exclude '.gitattributes' \
+            --exclude '*.zip' \
+
+          cd staging
+          zip -r "../$RESOURCE-$TAG.zip" "$RESOURCE" -x '*.DS_Store'
+          cd ..
+
+          echo "Packaged:"
+          unzip -l "$RESOURCE-$TAG.zip" | head -20
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESOURCE="${GITHUB_REPOSITORY##*/}"
+          gh release upload "${GITHUB_REF_NAME}" "$RESOURCE-${GITHUB_REF_NAME}.zip" --clobber
