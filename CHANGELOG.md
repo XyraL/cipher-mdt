@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.5.0] — unreleased
+## [1.5.0] — 2026-08-13
 
 Cipher MDT becomes multi-department: Police, EMS and Fire in one resource.
 
