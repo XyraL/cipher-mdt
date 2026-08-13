@@ -1,4 +1,5 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 
 -- Fine deduction handler — replaceable via exports
 local _fineHandler = function(targetSrc, amount, reason)
@@ -16,7 +17,7 @@ exports('DeductFine', function(targetSrc, amount, reason) _fineHandler(targetSrc
 -- ─── Arrests ───────────────────────────────────────────────────────────────
 
 lib.callback.register('cipher-mdt:server:logArrest', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'arrests') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     if not data.citizenid or not data.charges or #data.charges == 0 then return false end
 
@@ -59,7 +60,7 @@ lib.callback.register('cipher-mdt:server:logArrest', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:getArrests', function(source, citizenid)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     local results = MySQL.query.await('SELECT * FROM mdt_arrests WHERE citizenid = ? ORDER BY created_at DESC', { citizenid })
     for _, a in ipairs(results) do a.charges = json.decode(a.charges) end
     return results
@@ -68,7 +69,7 @@ end)
 -- ─── Citations ─────────────────────────────────────────────────────────────
 
 lib.callback.register('cipher-mdt:server:issueCitation', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'citations') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     if not data.citizenid or not data.charges or #data.charges == 0 then return false end
 
@@ -92,7 +93,7 @@ lib.callback.register('cipher-mdt:server:issueCitation', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:getCitations', function(source, citizenid)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'citations') then return nil end
     local results = MySQL.query.await('SELECT * FROM mdt_citations WHERE citizenid = ? ORDER BY created_at DESC', { citizenid })
     for _, c in ipairs(results) do c.charges = json.decode(c.charges) end
     return results
@@ -100,7 +101,7 @@ end)
 
 -- Recent arrests (default load when tab opens — no search required)
 lib.callback.register('cipher-mdt:server:getRecentArrests', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     local results = MySQL.query.await([[
         SELECT a.*, COALESCE(CONCAT(c.firstname,' ',c.lastname), a.citizenid) as civilian_name
         FROM mdt_arrests a
@@ -115,7 +116,7 @@ end)
 
 -- Unified search for arrests: civilian name/ID + officer name + date range
 lib.callback.register('cipher-mdt:server:searchArrests', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     data = data or {}
     local where, params = {}, {}
 
@@ -151,7 +152,7 @@ end)
 
 -- Legacy alias kept for backward compat
 lib.callback.register('cipher-mdt:server:getArrestsByName', function(source, query)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     if not query or #query < 2 then return {} end
     local like = '%'..query..'%'
     local results = MySQL.query.await([[
@@ -166,7 +167,7 @@ end)
 
 -- Recent citations (default load)
 lib.callback.register('cipher-mdt:server:getRecentCitations', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'citations') then return nil end
     local results = MySQL.query.await([[
         SELECT ci.*, COALESCE(CONCAT(c.firstname,' ',c.lastname), ci.citizenid) as civilian_name
         FROM mdt_citations ci
@@ -181,7 +182,7 @@ end)
 
 -- Unified search for citations: civilian name/ID + officer name + date range
 lib.callback.register('cipher-mdt:server:searchCitations', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'citations') then return nil end
     data = data or {}
     local where, params = {}, {}
 
@@ -217,7 +218,7 @@ end)
 
 -- Legacy alias
 lib.callback.register('cipher-mdt:server:getCitationsByName', function(source, query)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'citations') then return nil end
     if not query or #query < 2 then return {} end
     local like = '%'..query..'%'
     local results = MySQL.query.await([[
@@ -233,7 +234,7 @@ end)
 -- ─── Record Tags ───────────────────────────────────────────────────────────
 
 lib.callback.register('cipher-mdt:server:updateRecordTags', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'arrests') then return false end
     if not data or not data.type or not data.id or not data.tags then return false end
     local tableMap = { arrest = 'mdt_arrests', citation = 'mdt_citations', incident = 'mdt_incidents' }
     local tbl = tableMap[data.type]
@@ -245,7 +246,7 @@ end)
 -- ─── Fetch records by ID lists (for incident linked records display) ──────────
 
 lib.callback.register('cipher-mdt:server:getRecordsByIds', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     local result = { arrests = {}, citations = {} }
 
     if data.arrests and #data.arrests > 0 then
@@ -275,7 +276,7 @@ end)
 
 -- Mark a citation as paid and optionally deduct the fine from the civilian's bank
 lib.callback.register('cipher-mdt:server:markCitationPaid', function(source, citationId)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'citations') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     local citation = MySQL.single.await('SELECT citizenid, fine FROM mdt_citations WHERE id = ? AND paid = 0', { citationId })
     if not citation then return false end

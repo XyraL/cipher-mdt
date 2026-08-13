@@ -2,6 +2,7 @@
 const MDT = {
     officer      : null,
     activeTab    : 'dashboard',
+    panels       : [],
     penalCodes   : [],
     activeCalls  : [],
     activeBolos  : [],
@@ -76,7 +77,18 @@ function nuiFetch(endpoint, payload = {}) {
     }).then(r => r.json()).catch(() => null);
 }
 
+// nuiFetch() relays to a SERVER callback. nuiPost() hits a client-side
+// RegisterNUICallback directly, for things the game handles locally.
+function nuiPost(name, payload = {}) {
+    return fetch(`https://cipher-mdt/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).catch(() => null);
+}
+
 function closeMDT() {
+    if (typeof stopMap === 'function') stopMap();
     fetch('https://cipher-mdt/close', { method: 'POST' });
     document.getElementById('mdt-overlay').classList.add('hidden');
 }
@@ -104,14 +116,153 @@ function showToast(title, body = '', type = 'info', duration = 5000) {
     }, duration);
 }
 
+// ── Panel Registry ────────────────────────────────────────────────────────
+// Every panel the MDT knows how to render. Which of these a given player
+// actually gets is decided server-side by Config.Departments[dept].panels —
+// this table only says how to label and group them.
+const PANELS = {
+    dashboard  : { label: 'Dashboard',   icon: '▦', section: 'Overview' },
+    roster     : { label: 'Roster',      icon: '◉', section: 'Overview' },
+    map        : { label: 'Live Map',    icon: '🗺', section: 'Overview' },
+
+    civilians  : { label: 'Civilians',   icon: '◎', section: 'Lookups' },
+    vehicles   : { label: 'Vehicles',    icon: '◈', section: 'Lookups' },
+
+    warrants   : { label: 'Warrants',    icon: '⚖', section: 'Records', badge: 'red' },
+    bolos      : { label: 'BOLOs',       icon: '◉', section: 'Records', badge: 'yellow' },
+    arrests    : { label: 'Arrests',     icon: '⬡', section: 'Records' },
+    citations  : { label: 'Citations',   icon: '◧', section: 'Records' },
+    incidents  : { label: 'Incidents',   icon: '◫', section: 'Records' },
+    penal      : { label: 'Penal Codes', icon: '≡', section: 'Records' },
+
+    pcr        : { label: 'Patient Care',    icon: '✚', section: 'Medical' },
+    medhistory : { label: 'Medical Records', icon: '❤', section: 'Medical' },
+    narclog    : { label: 'Narcotics Log',   icon: '💊', section: 'Medical' },
+
+    fireincidents: { label: 'Fire Incidents', icon: '🔥', section: 'Fire Ops' },
+    hazmat       : { label: 'Hazmat',         icon: '☣', section: 'Fire Ops', badge: 'yellow' },
+    apparatus    : { label: 'Apparatus',      icon: '🚒', section: 'Fire Ops' },
+
+    cad        : { label: 'CAD',          icon: '◈', section: 'Dispatch', badge: 'blue' },
+    callhistory: { label: 'Call History', icon: '◷', section: 'Dispatch' },
+    bulletins  : { label: 'Bulletins',    icon: '📌', section: 'Dispatch' },
+
+    mugshots   : { label: 'Mugshots',  icon: '📷', section: 'Personnel' },
+    shiftlog   : { label: 'Shift Log', icon: '⏱', section: 'Personnel' },
+};
+
+// Order sections appear in the sidebar. Anything unlisted lands at the end.
+const SECTION_ORDER = ['Overview', 'Lookups', 'Records', 'Medical', 'Fire Ops', 'Dispatch', 'Personnel'];
+
+// Build the sidebar + tab containers from the panel list the server sent.
+// A panel the department doesn't have is never rendered here *and* its
+// callbacks refuse to answer, so the two can't drift apart.
+function buildInterface(panels) {
+    const nav  = document.getElementById('mdt-nav');
+    const main = document.getElementById('mdt-content');
+    nav.innerHTML = '';
+    main.innerHTML = '';
+
+    const allowed = (panels || []).filter(p => PANELS[p]);
+    MDT.panels = allowed;
+
+    const bySection = {};
+    for (const key of allowed) {
+        const sec = PANELS[key].section || 'Other';
+        (bySection[sec] = bySection[sec] || []).push(key);
+    }
+
+    const sections = Object.keys(bySection).sort((a, b) => {
+        const ia = SECTION_ORDER.indexOf(a), ib = SECTION_ORDER.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    for (const sec of sections) {
+        const head = document.createElement('li');
+        head.className = 'nav-section';
+        head.textContent = sec;
+        nav.appendChild(head);
+
+        for (const key of bySection[sec]) {
+            const p  = PANELS[key];
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.dataset.tab = key;
+            li.innerHTML = `<span class="nav-icon">${p.icon}</span> ${p.label}` +
+                (p.badge ? `<span class="nav-badge ${p.badge}" id="badge-${key}"></span>` : '');
+            nav.appendChild(li);
+        }
+    }
+
+    for (const key of allowed) {
+        const div = document.createElement('div');
+        div.id = `tab-${key}`;
+        div.className = 'tab-panel';
+        main.appendChild(div);
+    }
+}
+
+// Paint the department's accent colour over the theme.
+function applyDepartmentTheme(officer) {
+    const root = document.documentElement;
+    if (officer.departmentColor) {
+        root.style.setProperty('--accent', officer.departmentColor);
+        root.style.setProperty('--accent-2', officer.departmentColor);
+        root.style.setProperty('--accent-glow', officer.departmentColor + '26'); // ~15% alpha
+    }
+    const logo = document.querySelector('.logo-hex');
+    if (logo && officer.departmentIcon) logo.textContent = officer.departmentIcon;
+    const ver = document.querySelector('.logo-version');
+    if (ver) ver.textContent = `${officer.departmentShort || '--'} · LIVE`;
+}
+
 // ── Tab Router ────────────────────────────────────────────────────────────
 function switchTab(tab) {
+    // Never open a panel this department doesn't have — the server would
+    // refuse the data anyway, and an empty panel just looks broken.
+    if (MDT.panels && MDT.panels.length && !MDT.panels.includes(tab)) return;
+
     document.querySelectorAll('.nav-item[data-tab]').forEach(el =>
         el.classList.toggle('active', el.dataset.tab === tab));
     document.querySelectorAll('.tab-panel').forEach(el =>
         el.classList.toggle('active', el.id === `tab-${tab}`));
+    if (MDT.activeTab === 'map' && tab !== 'map' && typeof stopMap === 'function') stopMap();
     MDT.activeTab = tab;
     onTabActivated(tab);
+}
+
+let _mapScriptLoading = null;
+
+function ensureMapLoaded() {
+    if (typeof window.initMapPanel === 'function') {
+        window.initMapPanel();
+        return;
+    }
+
+    const panel = document.getElementById('tab-map');
+    if (panel) panel.innerHTML = '<div class="empty-state"><div class="empty-title">Loading Live Map...</div><div class="empty-subtitle">Initializing unit telemetry</div></div>';
+
+    if (!_mapScriptLoading) {
+        _mapScriptLoading = new Promise((resolve, reject) => {
+            const existing = document.querySelector('script[data-cipher-map]');
+            if (existing) { existing.addEventListener('load', resolve, { once:true }); existing.addEventListener('error', reject, { once:true }); return; }
+            const script = document.createElement('script');
+            script.src = 'js/panels/map.js';
+            script.dataset.cipherMap = 'true';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.body.appendChild(script);
+        });
+    }
+
+    _mapScriptLoading.then(() => {
+        if (typeof window.initMapPanel === 'function') window.initMapPanel();
+        else throw new Error('Map panel loaded without initMapPanel');
+    }).catch(error => {
+        console.error('[CipherMDT] Failed to load Live Map:', error);
+        if (panel) panel.innerHTML = '<div class="empty-state"><div class="empty-title">Live Map unavailable</div><div class="empty-subtitle">Verify html/js/panels/map.js was uploaded with the resource.</div></div>';
+        _mapScriptLoading = null;
+    });
 }
 
 function onTabActivated(tab) {
@@ -131,25 +282,38 @@ function onTabActivated(tab) {
         case 'mugshots':    loadMugshots(); break;
         case 'callhistory': loadCallHistory(); break;
         case 'shiftlog':    loadShiftLog(); break;
+        case 'map':         ensureMapLoaded(); break;
+        case 'pcr':         loadPCRs(); break;
+        case 'medhistory':  loadMedicalRecords(); break;
+        case 'narclog':     loadNarcLog(); break;
+        case 'fireincidents': loadFireIncidents(); break;
+        case 'hazmat':      loadHazmat(); break;
+        case 'apparatus':   loadApparatus(); break;
     }
 }
 
 // ── Open / Close ──────────────────────────────────────────────────────────
 function openMDT(officer) {
     MDT.officer = officer;
+    buildInterface(officer.panels);
+    applyDepartmentTheme(officer);
     updateOfficerCard(officer);
     document.getElementById('mdt-overlay').classList.remove('hidden');
-    switchTab('dashboard');
-    nuiFetch('getPenalCodes').then(d => { if (d) MDT.penalCodes = d; });
-    nuiFetch('getActiveCalls').then(d => { if (d) { MDT.activeCalls = d; updateCADBadge(); } });
-    nuiFetch('getBolos').then(d => { if (d) { MDT.activeBolos = d; updateBoloBadge(); } });
-    nuiFetch('getWarrants', { filter: 'active' }).then(d => { if (d) updateWarrantBadge(d.length); });
+    switchTab(MDT.panels.includes('dashboard') ? 'dashboard' : (MDT.panels[0] || 'dashboard'));
+
+    // Only prefetch what this department is allowed to see.
+    const has = p => MDT.panels.includes(p);
+    if (has('penal'))     nuiFetch('getPenalCodes').then(d => { if (d) MDT.penalCodes = d; });
+    if (has('cad'))       nuiFetch('getActiveCalls').then(d => { if (d) { MDT.activeCalls = d; updateCADBadge(); } });
+    if (has('bolos'))     nuiFetch('getBolos').then(d => { if (d) { MDT.activeBolos = d; updateBoloBadge(); } });
+    if (has('warrants'))  nuiFetch('getWarrants', { filter: 'active' }).then(d => { if (d) updateWarrantBadge(d.length); });
+    if (has('hazmat'))    nuiFetch('getHazmat', { filter: 'active' }).then(d => { if (d) updateHazmatBadge(d.length); });
 }
 
 function updateOfficerCard(officer) {
     document.getElementById('officer-name').textContent = officer.name || 'Unknown Officer';
     document.getElementById('officer-sub').textContent =
-        `Badge #${officer.badge || '---'} · ${officer.callsign || 'No Callsign'}`;
+        `${officer.departmentShort || '--'} · Badge #${officer.badge || '---'} · ${officer.callsign || 'No Callsign'}`;
     const dot = document.getElementById('officer-dot');
     if (dot) {
         dot.className = 'status-dot ' + (officer.onduty ? 'on' : 'off');
@@ -164,6 +328,13 @@ function updateCADBadge() {
     if (!badge) return;
     badge.textContent = MDT.activeCalls.length;
     badge.classList.toggle('show', MDT.activeCalls.length > 0);
+}
+
+function updateHazmatBadge(count) {
+    const badge = document.getElementById('badge-hazmat');
+    if (!badge) return;
+    badge.textContent = count;
+    badge.classList.toggle('show', count > 0);
 }
 
 function updateBoloBadge() {
@@ -247,6 +418,7 @@ window.addEventListener('message', (e) => {
             openMDT(data.officer);
             break;
         case 'close':
+            if (typeof stopMap === 'function') stopMap();
             document.getElementById('mdt-overlay').classList.add('hidden');
             break;
         case 'warrantAlert':
@@ -314,8 +486,12 @@ window.addEventListener('message', (e) => {
 });
 
 // ── Nav Binding ───────────────────────────────────────────────────────────
-document.querySelectorAll('.nav-item[data-tab]').forEach(el =>
-    el.addEventListener('click', () => switchTab(el.dataset.tab)));
+// Delegated: the nav list is rebuilt every time the MDT opens, so binding
+// individual items at load time would attach to elements that no longer exist.
+document.getElementById('mdt-nav').addEventListener('click', (e) => {
+    const item = e.target.closest('.nav-item[data-tab]');
+    if (item) switchTab(item.dataset.tab);
+});
 
 // ── Modal Factory ─────────────────────────────────────────────────────────
 function createModal(title, bodyHTML, onConfirm, confirmLabel = 'Save', iconEmoji = '◈') {
@@ -530,7 +706,10 @@ function copyToClipboard(text, label = 'Copied') {
 }
 
 function copyBtn(text, label = '⎘') {
-    return `<button class="btn-copy" title="Copy" onclick="event.stopPropagation();_doCopy(this,'${text.replace(/'/g,"\\'")}');">${label}</button>`;
+    // A row missing the field would otherwise throw and take down the whole
+    // list render, so render nothing rather than blowing up the panel.
+    if (text === undefined || text === null || text === '') return '';
+    return `<button class="btn-copy" title="Copy" onclick="event.stopPropagation();_doCopy(this,'${String(text).replace(/'/g,"\\'")}');">${label}</button>`;
 }
 function _doCopy(btn, text) {
     copyToClipboard(text);

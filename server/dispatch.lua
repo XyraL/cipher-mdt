@@ -1,4 +1,6 @@
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 -- CipherMDT Server Dispatch — receives auto-dispatch events and creates CAD calls
+if Config.DisableInternalDispatchDetection then return end
 
 -- ── Suppression & Filter Registry ────────────────────────────────────────
 -- _suppressed[callType] = true  → globally blocked
@@ -97,6 +99,14 @@ exports('CreateDispatchCall', function(data)
     if not data or not data.callType or not data.description or not data.coords then
         return nil
     end
+    if MdtDispatchBridge.IsExternal() then
+        local id = MdtDispatchBridge.Call('createCall', -1, {
+            type=string.lower(data.callType), title=data.label or data.callType,
+            description=data.description, coords=data.coords, street=data.street,
+            caller=data.callerName or 'Dispatch', priority=data.priority,
+        })
+        return id
+    end
 
     -- Check suppression (intentional calls still respect global suppression)
     if not IsAllowed(data.callType, data, -1) then return nil end
@@ -137,10 +147,11 @@ exports('CreateDispatchCall', function(data)
         created_at  = os.date('%Y-%m-%dT%H:%M:%SZ'),
     }
 
+    -- Only the departments Config.CallRouting assigns to this call type.
     local players = exports['qbx_core']:GetQBPlayers()
     for psrc, p in pairs(players) do
         local job = p.PlayerData.job
-        if Config.AuthorizedJobs[job.name] and (not Config.OnDutyOnly or job.onduty) then
+        if Dept.ReceivesCall(job.name, data.callType) and (not Config.OnDutyOnly or job.onduty) then
             TriggerClientEvent('cipher-mdt:client:newCall', psrc, callData)
             TriggerClientEvent('cipher-mdt:client:dispatchAlert', psrc, {
                 icon        = icon,
@@ -192,6 +203,14 @@ local _recentCalls = {}
 RegisterNetEvent('cipher-mdt:server:autoDispatch')
 AddEventHandler('cipher-mdt:server:autoDispatch', function(data)
     local src = source
+    if MdtDispatchBridge.IsExternal() then
+        MdtDispatchBridge.Call('createCall', src, {
+            type = data and string.lower(data.callType or 'custom') or 'custom',
+            title = data and data.callType or 'Dispatch Call', description = data and data.description,
+            street = data and data.street, coords = data and data.coords, caller = GetPlayerName(src),
+        })
+        return
+    end
     local player = exports['qbx_core']:GetPlayer(src)
     if not player then return end
 
@@ -245,11 +264,11 @@ AddEventHandler('cipher-mdt:server:autoDispatch', function(data)
         created_at  = os.date('%Y-%m-%dT%H:%M:%SZ'),
     }
 
-    -- Broadcast to all authorized officers
+    -- Broadcast to the departments this call type is routed to.
     local players = exports['qbx_core']:GetQBPlayers()
     for psrc, p in pairs(players) do
         local job = p.PlayerData.job
-        if Config.AuthorizedJobs[job.name] and (not Config.OnDutyOnly or job.onduty) then
+        if Dept.ReceivesCall(job.name, callType) and (not Config.OnDutyOnly or job.onduty) then
             TriggerClientEvent('cipher-mdt:client:newCall', psrc, callData)
             TriggerClientEvent('cipher-mdt:client:dispatchAlert', psrc, {
                 icon        = icon,
@@ -271,9 +290,16 @@ end)
 RegisterNetEvent('cipher-mdt:server:manualDispatch')
 AddEventHandler('cipher-mdt:server:manualDispatch', function(data)
     local src = source
-    if not exports['cipher-mdt']:IsAuthorized(src) then return end
+    if not exports['cipher-mdt']:HasPanel(src, 'cad') then return end
     local officer = exports['cipher-mdt']:GetOfficerInfo(src)
     if not officer then return end
+    if MdtDispatchBridge.IsExternal() then
+        MdtDispatchBridge.Call('createCall', src, {
+            type='custom', title=data.callType or 'Dispatch Call', description=data.description or '',
+            street=data.location or 'Unknown', coords=data.coords, caller=officer.name,
+        })
+        return
+    end
 
     local dateStr = os.date('%Y%m%d')
     local count = MySQL.scalar.await(
@@ -308,10 +334,11 @@ AddEventHandler('cipher-mdt:server:manualDispatch', function(data)
         created_at  = os.date('%Y-%m-%dT%H:%M:%SZ'),
     }
 
+    -- Manually created calls carry a free-text type, so they route as CUSTOM.
     local players = exports['qbx_core']:GetQBPlayers()
     for psrc, p in pairs(players) do
         local job = p.PlayerData.job
-        if Config.AuthorizedJobs[job.name] and (not Config.OnDutyOnly or job.onduty) then
+        if Dept.ReceivesCall(job.name, 'CUSTOM') and (not Config.OnDutyOnly or job.onduty) then
             TriggerClientEvent('cipher-mdt:client:newCall', psrc, callData)
         end
     end
@@ -329,6 +356,16 @@ AddEventHandler('cipher-mdt:server:panicButton', function(data)
     local name   = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname
     local badge  = MySQL.scalar.await('SELECT badge FROM mdt_officers WHERE citizenid = ?', { pd.citizenid }) or '???'
     local street = data.street or 'Unknown Location'
+    if MdtDispatchBridge.IsExternal() then
+        MdtDispatchBridge.Call('createCall', src, {
+            type='officer_backup', title=name .. ' activated PANIC',
+            description='OFFICER NEEDS ASSISTANCE — ' .. name .. ' (Badge #' .. badge .. ')',
+            priority=1, street=street, coords=data, caller=name,
+        })
+        exports['cipher-mdt']:AuditLog('PANIC BUTTON', name, 'Badge #' .. badge .. ' at ' .. street)
+        exports['cipher-mdt']:LogBodyCam(src, 'PANIC_BUTTON', 'Location: ' .. street)
+        return
+    end
 
     -- Create a priority CAD call
     local dateStr = os.date('%Y%m%d')
@@ -364,7 +401,7 @@ AddEventHandler('cipher-mdt:server:panicButton', function(data)
     -- Broadcast to ALL authorized players with high-priority alert
     local players = exports['qbx_core']:GetQBPlayers()
     for psrc, p in pairs(players) do
-        if Config.AuthorizedJobs[p.PlayerData.job.name] then
+        if Dept.ReceivesCall(p.PlayerData.job.name, nil) then   -- safety alert: all departments
             TriggerClientEvent('cipher-mdt:client:panicAlert', psrc, {
                 officerName = name,
                 badge       = badge,
@@ -392,6 +429,15 @@ AddEventHandler('cipher-mdt:server:backupRequest', function(data)
     local name   = pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname
     local badge  = MySQL.scalar.await('SELECT badge FROM mdt_officers WHERE citizenid = ?', { pd.citizenid }) or '???'
     local street = data.street or 'Unknown Location'
+    if MdtDispatchBridge.IsExternal() then
+        MdtDispatchBridge.Call('createCall', src, {
+            type='officer_backup', title='Backup Requested — ' .. name,
+            description='BACKUP REQUESTED — ' .. name .. ' (Badge #' .. badge .. ')',
+            priority=2, street=street, coords=data, caller=name,
+        })
+        exports['cipher-mdt']:AuditLog('BACKUP REQUEST', name, 'Badge #' .. badge .. ' at ' .. street)
+        return
+    end
 
     local dateStr = os.date('%Y%m%d')
     local count   = MySQL.scalar.await(
@@ -426,7 +472,7 @@ AddEventHandler('cipher-mdt:server:backupRequest', function(data)
 
     local players = exports['qbx_core']:GetQBPlayers()
     for psrc, p in pairs(players) do
-        if Config.AuthorizedJobs[p.PlayerData.job.name] then
+        if Dept.ReceivesCall(p.PlayerData.job.name, nil) then   -- safety alert: all departments
             TriggerClientEvent('cipher-mdt:client:newCall', psrc, callData)
             TriggerClientEvent('cipher-mdt:client:dispatchAlert', psrc, {
                 icon        = '🆘',

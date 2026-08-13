@@ -1,5 +1,33 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 local GetOfficerInfo = function(src) return exports['cipher-mdt']:GetOfficerInfo(src) end
+
+-- Public identity adapter for dispatch resources. Keeps MDT table ownership
+-- inside Cipher MDT instead of requiring integrations to query it directly.
+exports('GetDispatchIdentity', function(src)
+    local officer = GetOfficerInfo(tonumber(src))
+    if not officer then return nil end
+    local profile = MySQL.single.await('SELECT badge, callsign, department FROM mdt_officers WHERE citizenid = ?', { officer.citizenid })
+    if not profile then return nil end
+    return {
+        callsign = profile.callsign,
+        badge = profile.badge,
+        department = profile.department,
+        unitType = 'field',
+    }
+end)
+
+exports('SetDispatchStatus', function(src, status)
+    local officer = GetOfficerInfo(tonumber(src))
+    if not officer then return false end
+    local aliases = {
+        ['10-8 Available'] = '10-8', ['10-6 Busy'] = '10-6',
+        ['10-7 Out of Service'] = '10-7', ['On Scene'] = 'Code 4',
+    }
+    local mdtStatus = aliases[status] or status
+    MySQL.update.await('UPDATE mdt_officers SET status = ? WHERE citizenid = ?', { mdtStatus, officer.citizenid })
+    return true
+end)
 
 -- Get all currently on-duty officers (live, from connected players)
 lib.callback.register('cipher-mdt:server:getRoster', function(source)
@@ -42,7 +70,7 @@ lib.callback.register('cipher-mdt:server:getMyOfficerProfile', function(source)
     profile.onduty      = officer.onduty
     profile.grade       = officer.gradeLabel    -- human-readable rank label
     profile.gradeLevel  = officer.grade         -- numeric grade for permission checks
-    profile.isSupervisor = officer.grade >= Config.SupervisorGrade
+    profile.isSupervisor = officer.grade >= Dept.SupervisorGrade(officer.job)
     return profile
 end)
 
@@ -213,6 +241,9 @@ lib.callback.register('cipher-mdt:server:setUnitStatus', function(source, status
         _unitPositions[officer.citizenid].status = status
     end
     MySQL.update.await('UPDATE mdt_officers SET status = ? WHERE citizenid = ?', { status, officer.citizenid })
+    if MdtDispatchBridge and MdtDispatchBridge.IsExternal() then
+        MdtDispatchBridge.Call('setUnitStatus', source, status)
+    end
     BroadcastUnits()   -- rebroadcast so the roster/map update live
     return true
 end)
@@ -220,9 +251,9 @@ end)
 -- ─── Department Statistics (supervisor only) ────────────────────────────────
 
 lib.callback.register('cipher-mdt:server:getDepartmentStats', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'arrests') then return nil end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Config.SupervisorGrade then return nil end
+    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return nil end
 
     local arrests_week   = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_arrests   WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0
     local citations_week = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_citations WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0

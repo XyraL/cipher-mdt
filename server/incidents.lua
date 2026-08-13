@@ -1,7 +1,8 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 
 lib.callback.register('cipher-mdt:server:getIncidents', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'incidents') then return nil end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     local filter = (type(data) == 'table' and data.filter) or (type(data) == 'string' and data) or 'all'
 
@@ -22,7 +23,7 @@ lib.callback.register('cipher-mdt:server:getIncidents', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:getIncident', function(source, id)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'incidents') then return nil end
     local incident = MySQL.single.await('SELECT * FROM mdt_incidents WHERE id = ?', { id })
     if not incident then return nil end
     incident.involved_civilians = incident.involved_civilians and json.decode(incident.involved_civilians) or {}
@@ -33,7 +34,7 @@ lib.callback.register('cipher-mdt:server:getIncident', function(source, id)
 end)
 
 lib.callback.register('cipher-mdt:server:createIncident', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'incidents') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     if not data.title or not data.narrative then return false end
 
@@ -55,7 +56,7 @@ lib.callback.register('cipher-mdt:server:createIncident', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:updateIncident', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'incidents') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
 
     -- Only the author or a supervisor (grade 3+) can edit
@@ -82,7 +83,7 @@ lib.callback.register('cipher-mdt:server:updateIncident', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:deleteIncident', function(source, id)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'incidents') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     local existing = MySQL.single.await('SELECT created_by FROM mdt_incidents WHERE id = ?', { id })
     if not existing then return false end
@@ -98,7 +99,7 @@ end)
 -- ── Case linking ───────────────────────────────────────────────────────────
 
 lib.callback.register('cipher-mdt:server:setCaseNumber', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'incidents') then return false end
     if not data.incidentId or not data.caseNumber then return false end
     -- Trim and validate: alphanumeric + hyphens, max 50 chars
     local cn = tostring(data.caseNumber):gsub('[^%w%-]', ''):sub(1, 50)
@@ -107,7 +108,7 @@ lib.callback.register('cipher-mdt:server:setCaseNumber', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:getIncidentsByCase', function(source, caseNumber)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'incidents') then return nil end
     if not caseNumber or #caseNumber < 1 then return {} end
     local results = MySQL.query.await([[
         SELECT id, title, severity, created_by_name, created_at, case_number

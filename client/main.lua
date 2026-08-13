@@ -65,7 +65,7 @@ CreateThread(function()
 end)
 
 -- Auto-close MDT when going off-duty (if OnDutyOnly is enabled)
-AddEventHandler('QBCore:Client:OnJobUpdate', function(job)
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
     if Config.OnDutyOnly and not job.onduty and mdtOpen then
         CloseMDT()
         lib.notify({ title = 'CipherMDT', description = 'MDT closed — you went off duty.', type = 'inform' })
@@ -80,6 +80,15 @@ end)
 RegisterNUICallback('close', function(_, cb)
     CloseMDT()
     cb('ok')
+end)
+
+-- Map click / "Route" button → drop a GPS waypoint at that world position.
+RegisterNUICallback('setWaypoint', function(data, cb)
+    local x, y = tonumber(data and data.x), tonumber(data and data.y)
+    if x and y then
+        SetNewWaypoint(x + 0.0, y + 0.0)
+    end
+    cb({ ok = x ~= nil and y ~= nil })
 end)
 
 -- Forward all data requests from NUI to server callbacks

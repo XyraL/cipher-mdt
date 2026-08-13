@@ -118,25 +118,33 @@ function searchCivilians(query) {
                 </div>`;
             return;
         }
+        // The warrant/arrest columns are dropped entirely for departments that
+        // can't see criminal data — showing "None / 0 records" would read as a
+        // clean record rather than "not available to you".
+        const showCriminal = (MDT.panels || []).includes('warrants');
+
         el.innerHTML = `
             <div class="data-table-wrap">
                 <table class="data-table">
                     <thead>
-                        <tr><th>Name</th><th>Date of Birth</th><th>Citizen ID</th><th>Warrants</th><th>Arrests</th><th></th></tr>
+                        <tr><th>Name</th><th>Date of Birth</th><th>Citizen ID</th>${
+                            showCriminal ? '<th>Warrants</th><th>Arrests</th>' : '<th>Phone</th>'}<th></th></tr>
                     </thead>
                     <tbody>
                         ${results.map(c => `
                             <tr onclick="openCivilianProfile('${c.citizenid}')">
                                 <td>
                                     <div class="font-bold">${c.firstname} ${c.lastname}</div>
-                                    ${c.active_warrants > 0 ? '<div class="text-xs text-red mt-1">⚠ Active Warrant</div>' : ''}
+                                    ${showCriminal && c.active_warrants > 0 ? '<div class="text-xs text-red mt-1">⚠ Active Warrant</div>' : ''}
                                 </td>
                                 <td class="font-mono">${c.dob || '—'}</td>
                                 <td class="font-mono text-muted text-sm">${c.citizenid}</td>
+                                ${showCriminal ? `
                                 <td>${c.active_warrants > 0
                                     ? `<span class="tag tag-red">⚠ ${c.active_warrants} Active</span>`
                                     : '<span class="tag tag-green">None</span>'}</td>
-                                <td><span class="tag tag-gray">${c.arrest_count || 0} records</span></td>
+                                <td><span class="tag tag-gray">${c.arrest_count || 0} records</span></td>`
+                                : `<td class="font-mono text-muted text-sm">${c.phone || '—'}</td>`}
                                 <td><button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openCivilianProfile('${c.citizenid}')">View →</button></td>
                             </tr>`).join('')}
                     </tbody>
@@ -157,11 +165,8 @@ function openCivilianProfile(citizenid) {
                 </div>
                 <div class="panel-title" style="margin-top:2px;">Civilian Profile</div>
             </div>
-            <div class="panel-actions">
+            <div class="panel-actions" id="civ-profile-actions">
                 <button class="btn btn-ghost btn-sm" onclick="initCivilianPanel()">← Back</button>
-                <button class="btn btn-warning btn-sm" onclick="openIssueWarrantModal('${citizenid}')">⚖ Issue Warrant</button>
-                <button class="btn btn-success btn-sm" onclick="openNewCitationModal('${citizenid}')">📄 Citation</button>
-                <button class="btn btn-danger btn-sm" onclick="openNewArrestModal('${citizenid}')">🔒 Log Arrest</button>
             </div>
         </div>
         <div class="panel-body" id="civ-profile-body">
@@ -176,7 +181,145 @@ function openCivilianProfile(citizenid) {
             return;
         }
         renderCivilianProfile(data);
+
+        if (data.canSeeCriminal) {
+            const bar = document.getElementById('civ-profile-actions');
+            if (bar) bar.insertAdjacentHTML('beforeend', `
+                <button class="btn btn-warning btn-sm" onclick="openIssueWarrantModal('${citizenid}')">⚖ Issue Warrant</button>
+                <button class="btn btn-success btn-sm" onclick="openNewCitationModal('${citizenid}')">📄 Citation</button>
+                <button class="btn btn-danger btn-sm" onclick="openNewArrestModal('${citizenid}')">🔒 Log Arrest</button>`);
+        }
     });
+}
+
+// The profile is shared by all departments, so its summary cards, tabs and
+// tab bodies are assembled from what the server actually returned. Police get
+// the criminal view; EMS (any department with the 'medhistory' panel) gets the
+// medical one. A department with neither just sees identity details.
+function civSummaryCards(data) {
+    if (data.canSeeCriminal) {
+        const active = (data.warrants || []).filter(w => w.status === 'active').length;
+        return `
+            <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
+                <div class="stat-label">Warrants</div>
+                <div style="font-size:22px;font-weight:800;color:${active ? 'var(--red)' : 'var(--green)'};">${active}</div>
+            </div>
+            <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
+                <div class="stat-label">Arrests</div>
+                <div style="font-size:22px;font-weight:800;color:var(--text-primary);">${(data.arrests || []).length}</div>
+            </div>`;
+    }
+    if (data.canSeeMedical) {
+        const med = data.medical || {};
+        const allergies = (med.allergies || []).length;
+        return `
+            <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
+                <div class="stat-label">Blood Type</div>
+                <div style="font-size:22px;font-weight:800;color:var(--red);">${med.blood_type || '—'}</div>
+            </div>
+            <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
+                <div class="stat-label">Allergies</div>
+                <div style="font-size:22px;font-weight:800;color:${allergies ? 'var(--orange)' : 'var(--text-primary)'};">${allergies}</div>
+            </div>
+            ${Number(med.dnr) ? '<span class="tag tag-orange">⚠ DNR ON FILE</span>' : ''}`;
+    }
+    return '';
+}
+
+function civProfileTabs(data) {
+    const tabs = [];
+    if (data.canSeeCriminal) {
+        tabs.push(['civ-warrants',  'Warrants',  (data.warrants  || []).length]);
+        tabs.push(['civ-arrests',   'Arrests',   (data.arrests   || []).length]);
+        tabs.push(['civ-citations', 'Citations', (data.citations || []).length]);
+        tabs.push(['civ-vehicles',  'Vehicles',  (data.vehicles  || []).length]);
+    }
+    if (data.canSeeMedical) {
+        tabs.push(['civ-medical', 'Medical', null]);
+        tabs.push(['civ-medhist', 'History', (data.medical_history || []).length]);
+    }
+    if (data.canSeeCriminal) tabs.push(['civ-officer-notes', 'Notes', null]);
+
+    return tabs.map(([id, label, count], i) => `
+        <div class="profile-tab ${i === 0 ? 'active' : ''}" onclick="showCivTab(this,'${id}')">
+            ${label}${count !== null ? ` <span class="profile-tab-count">${count}</span>` : ''}
+        </div>`).join('');
+}
+
+function civProfileBodies(data) {
+    const out = [];
+    let first = true;
+    const wrap = (id, html) => {
+        out.push(`<div id="${id}" class="${first ? '' : 'hidden'}">${html}</div>`);
+        first = false;
+    };
+
+    if (data.canSeeCriminal) {
+        wrap('civ-warrants',  renderWarrantsList(data.warrants || [], data.citizenid));
+        wrap('civ-arrests',   renderArrestsList(data.arrests || []));
+        wrap('civ-citations', renderCitationsList(data.citations || []));
+        wrap('civ-vehicles',  renderVehiclesList(data.vehicles || []));
+    }
+    if (data.canSeeMedical) {
+        wrap('civ-medical', renderCivMedical(data));
+        wrap('civ-medhist', renderCivMedHistory(data));
+    }
+    if (!out.length) {
+        out.push('<div class="empty-state"><div class="empty-icon">🔒</div>' +
+                 '<div class="empty-title">No records available</div>' +
+                 '<div class="empty-subtitle">Your department can only see identity details</div></div>');
+    }
+    return out.join('');
+}
+
+function renderCivMedical(data) {
+    const med = data.medical;
+    if (!med) {
+        return '<div class="empty-state"><div class="empty-icon">❤</div>' +
+               '<div class="empty-title">No medical record on file</div></div>';
+    }
+    const block = (title, items, tagClass) => (items && items.length) ? `
+        <div class="mb-2">
+            <div class="form-label">${title}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${items.map(i => `<span class="tag ${tagClass}">${i}</span>`).join('')}
+            </div>
+        </div>` : '';
+
+    return `
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Medical Record</div>
+                <button class="btn btn-ghost btn-sm" onclick="switchTab('medhistory')">Open in Medical Records →</button>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                ${med.blood_type ? `<span class="tag tag-red">🩸 ${med.blood_type}</span>` : ''}
+                ${Number(med.dnr) ? '<span class="tag tag-orange">⚠ DNR</span>' : ''}
+                ${Number(med.organ_donor) ? '<span class="tag tag-green">ORGAN DONOR</span>' : ''}
+            </div>
+            ${block('Allergies', med.allergies, 'tag-red')}
+            ${block('Conditions', med.conditions, 'tag-orange')}
+            ${block('Medications', med.medications, 'tag-blue')}
+            ${med.notes ? `<div class="mt-2"><div class="form-label">Notes</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);">${med.notes}</div></div>` : ''}
+        </div>`;
+}
+
+function renderCivMedHistory(data) {
+    const rows = data.medical_history || [];
+    if (!rows.length) {
+        return '<div class="empty-state"><div class="empty-icon">📋</div>' +
+               '<div class="empty-title">No history entries</div></div>';
+    }
+    return `<div class="card">${rows.map(h => `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;gap:8px;align-items:center;">
+                <span class="tag tag-gray">${h.entry_type}</span>
+                <span class="text-xs text-muted font-mono">${fmtDateShort(h.created_at)}</span>
+                <span class="text-xs text-muted">— ${h.author_name}</span>
+            </div>
+            <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px;">${h.entry}</div>
+        </div>`).join('')}</div>`;
 }
 
 function renderCivilianProfile(data) {
@@ -206,43 +349,20 @@ function renderCivilianProfile(data) {
                 </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0;">
-                <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
-                    <div class="stat-label">Warrants</div>
-                    <div style="font-size:22px;font-weight:800;color:${hasWarrant?'var(--red)':'var(--green)'};">${(data.warrants||[]).filter(w=>w.status==='active').length}</div>
-                </div>
-                <div class="card" style="padding:10px 14px;margin:0;min-width:120px;text-align:center;">
-                    <div class="stat-label">Arrests</div>
-                    <div style="font-size:22px;font-weight:800;color:var(--text-primary);">${(data.arrests||[]).length}</div>
-                </div>
+                ${civSummaryCards(data)}
             </div>
         </div>
 
-        ${data.notes ? `
+        ${(data.canSeeCriminal && data.notes) ? `
             <div class="alert alert-warn">
                 <span>📌</span>
                 <div><strong>Officer Notes:</strong> ${data.notes}</div>
             </div>` : ''}
 
-        <div class="profile-tabs">
-            <div class="profile-tab active" onclick="showCivTab(this,'civ-warrants')">
-                Warrants <span class="profile-tab-count">${(data.warrants||[]).length}</span>
-            </div>
-            <div class="profile-tab" onclick="showCivTab(this,'civ-arrests')">
-                Arrests <span class="profile-tab-count">${(data.arrests||[]).length}</span>
-            </div>
-            <div class="profile-tab" onclick="showCivTab(this,'civ-citations')">
-                Citations <span class="profile-tab-count">${(data.citations||[]).length}</span>
-            </div>
-            <div class="profile-tab" onclick="showCivTab(this,'civ-vehicles')">
-                Vehicles <span class="profile-tab-count">${(data.vehicles||[]).length}</span>
-            </div>
-            <div class="profile-tab" onclick="showCivTab(this,'civ-officer-notes')">Notes</div>
-        </div>
+        <div class="profile-tabs">${civProfileTabs(data)}</div>
 
-        <div id="civ-warrants">${renderWarrantsList(data.warrants || [], data.citizenid)}</div>
-        <div id="civ-arrests" class="hidden">${renderArrestsList(data.arrests || [])}</div>
-        <div id="civ-citations" class="hidden">${renderCitationsList(data.citations || [])}</div>
-        <div id="civ-vehicles" class="hidden">${renderVehiclesList(data.vehicles || [])}</div>
+        ${civProfileBodies(data)}
+        ${!data.canSeeCriminal ? '' : `
         <div id="civ-officer-notes" class="hidden">
             <div class="card">
                 <div class="card-header"><div class="card-title">Officer Notes</div></div>
@@ -257,7 +377,7 @@ function renderCivilianProfile(data) {
                 </div>
                 <button class="btn btn-primary btn-sm" onclick="saveCivNotes('${data.citizenid}')">Save Notes &amp; Flags</button>
             </div>
-        </div>`;
+        </div>`}`;
 
     // Init flag editor after HTML renders (works even though Notes tab is hidden initially)
     setTimeout(() => initCivFlagsEditor(data.citizenid, flags), 0);

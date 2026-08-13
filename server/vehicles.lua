@@ -1,8 +1,9 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 
 -- Search vehicle by plate, returns owner info and vehicle details
 lib.callback.register('cipher-mdt:server:lookupPlate', function(source, plate)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'vehicles') then return nil end
     if not plate or #plate < 1 then return nil end
 
     plate = plate:upper():gsub('%s+', '')
@@ -58,7 +59,7 @@ end)
 
 -- Mark vehicle as stolen
 lib.callback.register('cipher-mdt:server:flagVehicleStolen', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'vehicles') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
 
     -- Create a BOLO for the vehicle

@@ -2,6 +2,16 @@ if not Config.Target.Enabled then return end
 
 local mdtOpen = false  -- shadow from main.lua (updated via event)
 
+-- Target options are registered once at start, so each needs its own runtime
+-- check: without one every player — civilians included — sees "Issue Citation"
+-- on anyone they aim at.
+local function CanUse(panel)
+    local pd = exports['qbx_core']:GetPlayerData()
+    if not pd or not pd.job then return false end
+    if Config.OnDutyOnly and not pd.job.onduty then return false end
+    return Dept.HasPanel(pd.job.name, panel)
+end
+
 AddEventHandler('cipher-mdt:client:mdtStateChanged', function(state)
     mdtOpen = state
 end)
@@ -19,6 +29,7 @@ CreateThread(function()
                 label    = 'View MDT Profile',
                 icon     = 'fas fa-id-card',
                 distance = Config.Target.MaxDistance,
+                canInteract = function() return CanUse('civilians') end,
                 onSelect = function(data)
                     local playerId = GetPlayerFromEntity(data.entity)
                     if playerId == -1 then return end
@@ -30,6 +41,7 @@ CreateThread(function()
                 label    = 'Issue Citation',
                 icon     = 'fas fa-file-alt',
                 distance = Config.Target.MaxDistance,
+                canInteract = function() return CanUse('citations') end,
                 onSelect = function(data)
                     local playerId = GetPlayerFromEntity(data.entity)
                     if playerId == -1 then return end
@@ -41,6 +53,7 @@ CreateThread(function()
                 label    = 'Run Name Check',
                 icon     = 'fas fa-search',
                 distance = Config.Target.MaxDistance,
+                canInteract = function() return CanUse('warrants') end,
                 onSelect = function(data)
                     local playerId = GetPlayerFromEntity(data.entity)
                     if playerId == -1 then return end
@@ -55,6 +68,7 @@ CreateThread(function()
                 {
                     label  = 'View MDT Profile',
                     icon   = 'fas fa-id-card',
+                    canInteract = function() return CanUse('civilians') end,
                     action = function(entity)
                         local playerId = GetPlayerFromEntity(entity)
                         if playerId == -1 then return end
@@ -64,6 +78,7 @@ CreateThread(function()
                 {
                     label  = 'Issue Citation',
                     icon   = 'fas fa-file-alt',
+                    canInteract = function() return CanUse('citations') end,
                     action = function(entity)
                         local playerId = GetPlayerFromEntity(entity)
                         if playerId == -1 then return end
@@ -73,6 +88,7 @@ CreateThread(function()
                 {
                     label  = 'Run Name Check',
                     icon   = 'fas fa-search',
+                    canInteract = function() return CanUse('warrants') end,
                     action = function(entity)
                         local playerId = GetPlayerFromEntity(entity)
                         if playerId == -1 then return end

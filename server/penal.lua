@@ -1,7 +1,8 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 
 lib.callback.register('cipher-mdt:server:getPenalCodes', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'penal') then return nil end
     local codes = MySQL.query.await('SELECT * FROM mdt_penal_codes WHERE active = 1 ORDER BY category, code', {})
     -- Group by category
     local grouped = {}
@@ -19,7 +20,7 @@ end)
 
 -- Admin only: add/edit/remove penal codes
 lib.callback.register('cipher-mdt:server:addPenalCode', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'penal') then return false end
     local player = exports['qbx_core']:GetPlayer(source)
     if not player or player.PlayerData.job.grade.level < 3 then return false end
 
@@ -31,7 +32,7 @@ lib.callback.register('cipher-mdt:server:addPenalCode', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:updatePenalCode', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'penal') then return false end
     local player = exports['qbx_core']:GetPlayer(source)
     if not player or player.PlayerData.job.grade.level < 3 then return false end
 
@@ -43,7 +44,7 @@ lib.callback.register('cipher-mdt:server:updatePenalCode', function(source, data
 end)
 
 lib.callback.register('cipher-mdt:server:deletePenalCode', function(source, id)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'penal') then return false end
     local player = exports['qbx_core']:GetPlayer(source)
     if not player or player.PlayerData.job.grade.level < 3 then return false end
 

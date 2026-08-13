@@ -254,3 +254,19 @@ class NameSearch {
 }());
 
 window.NameSearch = NameSearch;
+
+/**
+ * Shorthand for the common case: attach a picker to a container id and hand
+ * the chosen person to a callback. Returns the NameSearch instance.
+ *   mountNameSearch('pcr-patient-search', p => { ... }, 'Existing Name')
+ */
+function mountNameSearch(containerId, onSelect, placeholderName) {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+    return new NameSearch({
+        container: el,
+        placeholder: placeholderName ? `${placeholderName} — search to change…` : 'Search by name…',
+        onSelect,
+    });
+}
+window.mountNameSearch = mountNameSearch;

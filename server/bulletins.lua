@@ -1,8 +1,9 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 local GetOfficerInfo = function(src) return exports['cipher-mdt']:GetOfficerInfo(src) end
 
 lib.callback.register('cipher-mdt:server:getBulletins', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'bulletins') then return nil end
     return MySQL.query.await([[
         SELECT * FROM mdt_bulletins
         WHERE is_archived = 0 AND (expires_at IS NULL OR expires_at > NOW())
@@ -12,9 +13,9 @@ lib.callback.register('cipher-mdt:server:getBulletins', function(source)
 end)
 
 lib.callback.register('cipher-mdt:server:createBulletin', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'bulletins') then return false end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Config.SupervisorGrade then return false end
+    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return false end
     if not data.title or not data.body then return false end
 
     local expiresAt = nil
@@ -36,17 +37,17 @@ lib.callback.register('cipher-mdt:server:createBulletin', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:deleteBulletin', function(source, bulletinId)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'bulletins') then return false end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Config.SupervisorGrade then return false end
+    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return false end
     MySQL.update.await('UPDATE mdt_bulletins SET is_archived = 1 WHERE id = ?', { bulletinId })
     return true
 end)
 
 lib.callback.register('cipher-mdt:server:pinBulletin', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'bulletins') then return false end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Config.SupervisorGrade then return false end
+    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return false end
     MySQL.update.await('UPDATE mdt_bulletins SET pinned = ? WHERE id = ?', { data.pinned and 1 or 0, data.id })
     return true
 end)

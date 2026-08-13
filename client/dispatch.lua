@@ -1,4 +1,14 @@
 -- CipherMDT Client Dispatch — detects game events and sends auto-dispatch calls
+if Config.DisableInternalDispatchDetection then return end
+
+local function InternalDetectionActive()
+    if Config.DispatchProvider == 'internal' then return true end
+    if Config.DispatchProvider ~= 'auto' then return false end
+    for _, adapter in ipairs(Config.DispatchAdapters or {}) do
+        if adapter.resource and GetResourceState(adapter.resource) == 'started' then return false end
+    end
+    return true
+end
 
 -- Suppression table: callType -> true means blocked
 local _suppressed = {}
@@ -26,6 +36,7 @@ local function GetStreetLabel(x, y, z)
 end
 
 local function SendDispatch(callType, description, coords)
+    if not InternalDetectionActive() then return end
     local street = GetStreetLabel(coords.x, coords.y, coords.z)
     TriggerServerEvent('cipher-mdt:server:autoDispatch', {
         callType    = callType,

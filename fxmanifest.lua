@@ -2,14 +2,13 @@ fx_version 'cerulean'
 game 'gta5'
 
 name 'CipherMDT'
-description 'Full-featured Police MDT with CAD integration for QBox/QBCore'
-version '1.4.0'
+description 'Multi-department MDT (Police / EMS / Fire) with CAD integration for QBox'
+version '1.5.0'
 author 'cipher-mdt'
 
 shared_scripts {
     '@ox_lib/init.lua',
     'config.lua',
-    'shared/departments.lua',   -- must load after config.lua
 }
 
 dependencies {
@@ -30,6 +29,7 @@ client_scripts {
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'server/main.lua',
+    'server/integrations.lua',
     'server/dispatch.lua',
     'server/officers.lua',
     'server/civilians.lua',
@@ -44,6 +44,8 @@ server_scripts {
     'server/bodycam.lua',
     'server/target.lua',
     'server/shiftlog.lua',
+    'server/ems.lua',
+    'server/fire.lua',
 }
 
 ui_page 'html/index.html'
@@ -66,6 +68,20 @@ files {
     'html/js/panels/mugshots.js',
     'html/js/panels/callhistory.js',
     'html/js/panels/shiftlog.js',
+    'html/js/panels/map.js',
+    -- Leaflet is vendored (BSD-2) — NUI has no reliable internet, so no CDN.
+    'html/vendor/leaflet/leaflet.js',
+    'html/vendor/leaflet/leaflet.css',
+    'html/vendor/leaflet/images/*.png',
+    'html/vendor/leaflet/LICENSE.txt',
+    -- Map tile pyramid, built by tools/build-map-tiles.js. Flat {z}_{x}_{y}
+    -- filenames in one directory: a single-level glob is the form FiveM
+    -- actually expands — nested ** silently shipped nothing and left the map
+    -- blank.
+    'html/assets/maps/tiles/*.webp',
+    'html/assets/maps/OULSEN-LICENSE.txt',
+    'html/js/panels/ems.js',
+    'html/js/panels/fire.js',
     'html/js/components/namesearch.js',
 }
 

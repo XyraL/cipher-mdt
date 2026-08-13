@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CipherMDT</title>
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -27,65 +28,8 @@
                     </div>
                 </div>
 
-                <ul id="mdt-nav">
-                    <li class="nav-section">Overview</li>
-                    <li class="nav-item active" data-tab="dashboard">
-                        <span class="nav-icon">▦</span> Dashboard
-                    </li>
-                    <li class="nav-item" data-tab="roster">
-                        <span class="nav-icon">◉</span> Roster
-                    </li>
-
-                    <li class="nav-section">Lookups</li>
-                    <li class="nav-item" data-tab="civilians">
-                        <span class="nav-icon">◎</span> Civilians
-                    </li>
-                    <li class="nav-item" data-tab="vehicles">
-                        <span class="nav-icon">◈</span> Vehicles
-                    </li>
-
-                    <li class="nav-section">Records</li>
-                    <li class="nav-item" data-tab="warrants">
-                        <span class="nav-icon">⚖</span> Warrants
-                        <span class="nav-badge red" id="badge-warrants"></span>
-                    </li>
-                    <li class="nav-item" data-tab="bolos">
-                        <span class="nav-icon">◉</span> BOLOs
-                        <span class="nav-badge yellow" id="badge-bolos"></span>
-                    </li>
-                    <li class="nav-item" data-tab="arrests">
-                        <span class="nav-icon">⬡</span> Arrests
-                    </li>
-                    <li class="nav-item" data-tab="citations">
-                        <span class="nav-icon">◧</span> Citations
-                    </li>
-                    <li class="nav-item" data-tab="incidents">
-                        <span class="nav-icon">◫</span> Incidents
-                    </li>
-                    <li class="nav-item" data-tab="penal">
-                        <span class="nav-icon">≡</span> Penal Codes
-                    </li>
-
-                    <li class="nav-section">Dispatch</li>
-                    <li class="nav-item" data-tab="cad">
-                        <span class="nav-icon">◈</span> CAD
-                        <span class="nav-badge blue" id="badge-cad"></span>
-                    </li>
-                    <li class="nav-item" data-tab="callhistory">
-                        <span class="nav-icon">◷</span> Call History
-                    </li>
-                    <li class="nav-item" data-tab="bulletins">
-                        <span class="nav-icon">📌</span> Bulletins
-                    </li>
-
-                    <li class="nav-section">Personnel</li>
-                    <li class="nav-item" data-tab="mugshots">
-                        <span class="nav-icon">📷</span> Mugshots
-                    </li>
-                    <li class="nav-item" data-tab="shiftlog">
-                        <span class="nav-icon">⏱</span> Shift Log
-                    </li>
-                </ul>
+                <!-- Built at runtime from the officer's department panel list (app.js) -->
+                <ul id="mdt-nav"></ul>
 
                 <div id="mdt-clock">
                     <div id="clock-time">00:00:00</div>
@@ -109,24 +53,8 @@
             </nav>
 
             <!-- ── Main Content ── -->
-            <main id="mdt-content">
-                <div id="tab-dashboard" class="tab-panel active"></div>
-                <div id="tab-roster"    class="tab-panel"></div>
-                <div id="tab-civilians" class="tab-panel"></div>
-                <div id="tab-vehicles"  class="tab-panel"></div>
-                <div id="tab-warrants"  class="tab-panel"></div>
-                <div id="tab-bolos"     class="tab-panel"></div>
-                <div id="tab-arrests"   class="tab-panel"></div>
-                <div id="tab-citations" class="tab-panel"></div>
-                <div id="tab-incidents" class="tab-panel"></div>
-                <div id="tab-penal"       class="tab-panel"></div>
-                <div id="tab-cad"         class="tab-panel"></div>
-                <div id="tab-bulletins"   class="tab-panel"></div>
-                <div id="tab-callhistory" class="tab-panel"></div>
-                <div id="tab-mugshots"    class="tab-panel"></div>
-                <div id="tab-shiftlog"    class="tab-panel"></div>
-
-            </main>
+            <!-- Tab panels are created per-department at runtime (app.js) -->
+            <main id="mdt-content"></main>
 
         </div>
     </div>
@@ -145,6 +73,7 @@
         </div>
     </div>
 
+    <script src="vendor/leaflet/leaflet.js"></script>
     <script src="js/app.js"></script>
     <script src="js/components/namesearch.js"></script>
     <script src="js/panels/officer.js"></script>
@@ -161,5 +90,8 @@
     <script src="js/panels/mugshots.js"></script>
     <script src="js/panels/callhistory.js"></script>
     <script src="js/panels/shiftlog.js"></script>
+    <script src="js/panels/map.js"></script>
+    <script src="js/panels/ems.js"></script>
+    <script src="js/panels/fire.js"></script>
 </body>
 </html>

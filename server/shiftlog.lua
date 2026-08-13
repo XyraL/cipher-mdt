@@ -1,13 +1,14 @@
 -- CipherMDT Server — Shift Log
 
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 local GetOfficerInfo = function(src) return exports['cipher-mdt']:GetOfficerInfo(src) end
 
 -- Track open shift IDs per citizenid
 local _openShifts = {}  -- citizenid -> shift db id
 
 lib.callback.register('cipher-mdt:server:clockIn', function(source)
-    if not IsAuthorized(source) then return { ok = false, error = 'Unauthorized' } end
+    if not HasPanel(source, 'shiftlog') then return { ok = false, error = 'Unauthorized' } end
     local officer = GetOfficerInfo(source)
     if not officer then return { ok = false, error = 'No officer data' } end
 
@@ -28,7 +29,7 @@ lib.callback.register('cipher-mdt:server:clockIn', function(source)
 end)
 
 lib.callback.register('cipher-mdt:server:clockOut', function(source)
-    if not IsAuthorized(source) then return { ok = false, error = 'Unauthorized' } end
+    if not HasPanel(source, 'shiftlog') then return { ok = false, error = 'Unauthorized' } end
     local officer = GetOfficerInfo(source)
     if not officer then return { ok = false, error = 'No officer data' } end
 
@@ -57,7 +58,7 @@ lib.callback.register('cipher-mdt:server:clockOut', function(source)
 end)
 
 lib.callback.register('cipher-mdt:server:getShiftStatus', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'shiftlog') then return nil end
     local officer = GetOfficerInfo(source)
     if not officer then return nil end
     return {
@@ -67,7 +68,7 @@ lib.callback.register('cipher-mdt:server:getShiftStatus', function(source)
 end)
 
 lib.callback.register('cipher-mdt:server:getShiftHistory', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'shiftlog') then return nil end
     data = data or {}
     local where, params = {}, {}
 
@@ -96,7 +97,7 @@ lib.callback.register('cipher-mdt:server:getShiftHistory', function(source, data
 end)
 
 lib.callback.register('cipher-mdt:server:getWeeklyHours', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'shiftlog') then return nil end
     local officer = GetOfficerInfo(source)
     if not officer then return nil end
 

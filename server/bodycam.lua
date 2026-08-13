@@ -20,9 +20,16 @@ lib.callback.register('cipher-mdt:server:getBodyCamLog', function(source, target
 
     -- Non-supervisors can only view their own log
     local cid = targetCitizenid
-    local isSupervisor = officer.grade >= Config.SupervisorGrade
+    local isSupervisor = officer.grade >= Dept.SupervisorGrade(officer.job)
     if not isSupervisor or not cid then
         cid = officer.citizenid
+    end
+
+    -- A supervisor oversees their own department only — an EMS captain has no
+    -- business reading a police officer's action log.
+    if cid ~= officer.citizenid then
+        local targetJob = MySQL.scalar.await('SELECT department FROM mdt_officers WHERE citizenid = ?', { cid })
+        if targetJob and Dept.OfJob(targetJob) ~= Dept.OfJob(officer.job) then return nil end
     end
 
     local results = MySQL.query.await([[

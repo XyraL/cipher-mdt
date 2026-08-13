@@ -1,12 +1,13 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 
 lib.callback.register('cipher-mdt:server:getBolos', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'bolos') then return nil end
     return MySQL.query.await('SELECT * FROM mdt_bolos WHERE active = 1 ORDER BY created_at DESC', {})
 end)
 
 lib.callback.register('cipher-mdt:server:issueBolo', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'bolos') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     if not officer then return false end
     if not data.description or not data.reason then return false end
@@ -31,7 +32,7 @@ lib.callback.register('cipher-mdt:server:issueBolo', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:clearBolo', function(source, boloId)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'bolos') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     MySQL.update.await('UPDATE mdt_bolos SET active = 0, cleared_by = ?, cleared_at = NOW() WHERE id = ?', {
         officer.citizenid, boloId

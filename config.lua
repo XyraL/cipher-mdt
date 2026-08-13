@@ -189,3 +189,114 @@ Config.Sounds = {
 --          'custom'     → exports['cipher-mdt']:OnJailPlayer(src, minutes) — implement your own handler
 --          false        → disabled (fires client event only, handle in client/main.lua)
 Config.JailResource = false
+
+-- 'auto' selects the first running adapter and safely falls back to the
+-- built-in CAD. A provider can also be forced by its id, or set to 'internal'.
+Config.DispatchProvider = 'auto'
+Config.DisableInternalDispatchDetection = false
+Config.DispatchAdapters = {
+    { id = 'cipher-dispatch', resource = 'cipher-dispatch', priority = 100 },
+    -- Generic export adapter example:
+    -- { id = 'my-dispatch', resource = 'my-dispatch', priority = 50, exports = {
+    --     getActiveCalls='GetActiveCalls', createCall='CreateCall', respond='RespondUnit',
+    --     setCallStatus='SetCallStatus', addCallNote='AddCallNote' } },
+}
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  CALL ROUTING
+--  Which departments are alerted for each dispatch call type. A call type
+--  that isn't listed uses Default. Officer-safety alerts (panic, backup)
+--  bypass this entirely and always reach everyone.
+-- ═══════════════════════════════════════════════════════════════════════════
+Config.CallRouting = {
+    Default = { 'police' },
+
+    Types = {
+        SHOTS_FIRED   = { 'police' },
+        FIGHT         = { 'police' },
+        ROBBERY       = { 'police' },
+        BANK_ROBBERY  = { 'police' },
+        STORE_ROBBERY = { 'police' },
+        TRAFFIC_STOP  = { 'police' },
+        SUSPICIOUS    = { 'police' },
+
+        MEDICAL       = { 'ems' },
+        FIRE          = { 'fire', 'ems' },            -- EMS stages on every structure fire
+        VEHICLE_CRASH = { 'police', 'ems', 'fire' },  -- full response
+
+        CUSTOM        = { 'police', 'ems', 'fire' },  -- manual calls go out wide
+    },
+}
+
+-- Department resolver lives in config.lua so it is guaranteed to exist on
+-- both client and server, even when a server owner updates only core files.
+Dept = Dept or {}
+
+-- Departments alerted for a call type.
+function Dept.DepartmentsForCall(callType)
+    local routing = Config.CallRouting or {}
+    return (routing.Types or {})[callType] or routing.Default or { 'police' }
+end
+
+-- Should this job be alerted about this call? `callType` nil means an
+-- officer-safety broadcast, which every department receives.
+function Dept.ReceivesCall(jobName, callType)
+    local dept = Dept.OfJob(jobName)
+    if not dept then return false end
+    if not callType then return true end
+    for _, candidate in ipairs(Dept.DepartmentsForCall(callType)) do
+        if candidate == dept then return true end
+    end
+    return false
+end
+
+function Dept.OfJob(jobName)
+    return jobName and Config.AuthorizedJobs[jobName] or nil
+end
+
+function Dept.ConfigOfJob(jobName)
+    local key = Dept.OfJob(jobName)
+    return key and Config.Departments[key] or nil
+end
+
+function Dept.PanelsOfJob(jobName)
+    local cfg = Dept.ConfigOfJob(jobName)
+    return cfg and cfg.panels or {}
+end
+
+function Dept.HasPanel(jobName, panel)
+    for _, candidate in ipairs(Dept.PanelsOfJob(jobName)) do
+        if candidate == panel then return true end
+    end
+    return false
+end
+
+function Dept.SupervisorGrade(jobName)
+    local cfg = Dept.ConfigOfJob(jobName)
+    return (cfg and cfg.supervisorGrade) or Config.SupervisorGrade or 3
+end
+
+function Dept.IsTracked(jobName)
+    local blips = Config.Blips or {}
+    if not blips.Enabled then return false end
+    if blips.TrackedJobs then
+        for _, trackedJob in ipairs(blips.TrackedJobs) do
+            if trackedJob == jobName then return true end
+        end
+        return false
+    end
+    return Dept.OfJob(jobName) ~= nil
+end
+
+function Dept.CanSeeUnit(viewerJob, unitJob)
+    if not Dept.IsTracked(viewerJob) or not Dept.IsTracked(unitJob) then return false end
+    if (Config.Blips or {}).CrossDepartment then return true end
+    return Dept.OfJob(viewerJob) == Dept.OfJob(unitJob)
+end
+
+function Dept.BlipColor(jobName)
+    local override = ((Config.Blips or {}).JobColors or {})[jobName]
+    if override then return override end
+    local cfg = Dept.ConfigOfJob(jobName)
+    return (cfg and cfg.blipColor) or 3
+end

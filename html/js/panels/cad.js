@@ -111,7 +111,7 @@ function renderCallList(calls) {
         const mins = elapsedMins(c.created_at);
         return `
         <div class="call-card status-${c.status} ${_selectedCallId===c.id?'selected':''}"
-             id="call-card-${c.id}" onclick="openCallDetail(${c.id})">
+             id="call-card-${c.id}" onclick='openCallDetail(${JSON.stringify(c.id)})'>
             <div class="call-card-top">
                 <span class="call-number">${c.call_number}</span>
                 <span class="priority-badge priority-${pri(c)}" style="margin-left:6px;">${pri(c) === 1 ? '🔴' : pri(c) === 3 ? '🟢' : '🟡'} P${pri(c)}</span>
@@ -160,8 +160,8 @@ function openCallDetail(callId) {
                 </span>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
                     ${call.coords ? `<button class="btn btn-ghost btn-sm" onclick="routeToCall(${JSON.stringify(call.coords).replace(/"/g,"'")}, '${call.location}')">🗺 GPS Route</button>` : ''}
-                    <button class="btn btn-success btn-sm" onclick="respondToCall(${callId})">✓ Respond</button>
-                    <button class="btn btn-ghost btn-sm" onclick="openUpdateStatusModal(${callId},'${call.status}')">Update Status</button>
+                    <button class="btn btn-success btn-sm" onclick='respondToCall(${JSON.stringify(callId)})'>✓ Respond</button>
+                    <button class="btn btn-ghost btn-sm" onclick='openUpdateStatusModal(${JSON.stringify(callId)},${JSON.stringify(call.status)})'>Update Status</button>
                 </div>
             </div>
         </div>
@@ -194,7 +194,7 @@ function openCallDetail(callId) {
                 <div class="card-header" style="margin-bottom:6px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
                         <div class="card-title">Unit Notes (${(call.notes||[]).length})</div>
-                        <button class="btn btn-ghost btn-xs" onclick="openAddNoteModal(${callId})">+ Add Note</button>
+                        <button class="btn btn-ghost btn-xs" onclick='openAddNoteModal(${JSON.stringify(callId)})'>+ Add Note</button>
                     </div>
                 </div>
                 <div id="call-notes-${callId}" style="max-height:200px;overflow-y:auto;">
@@ -210,11 +210,11 @@ function openCallDetail(callId) {
         </div>
 
         <div style="display:flex;gap:8px;padding-top:4px;border-top:1px solid var(--border);">
-            <button class="btn btn-warning btn-sm" onclick="openUpdateStatusModal(${callId},'${call.status}')">Change Status</button>
-            <button class="btn btn-ghost btn-sm" onclick="openAddNoteModal(${callId})">Add Note</button>
+            <button class="btn btn-warning btn-sm" onclick='openUpdateStatusModal(${JSON.stringify(callId)},${JSON.stringify(call.status)})'>Change Status</button>
+            <button class="btn btn-ghost btn-sm" onclick='openAddNoteModal(${JSON.stringify(callId)})'>Add Note</button>
             ${call.status !== 'completed' && call.status !== 'cancelled'
-                ? `<button class="btn btn-success btn-sm ml-auto" onclick="quickClose(${callId},'completed')">✓ Complete Call</button>
-                   <button class="btn btn-danger btn-sm" onclick="quickClose(${callId},'cancelled')">✕ Cancel Call</button>`
+                ? `<button class="btn btn-success btn-sm ml-auto" onclick='quickClose(${JSON.stringify(callId)},"completed")'>✓ Complete Call</button>
+                   <button class="btn btn-danger btn-sm" onclick='quickClose(${JSON.stringify(callId)},"cancelled")'>✕ Cancel Call</button>`
                 : ''}
         </div>`;
 }
@@ -353,7 +353,7 @@ async function showCADHistory() {
                     ${calls.map(c => `
                         <tr style="cursor:default;">
                             <td class="font-mono text-accent">${c.call_number}</td>
-                            <td class="font-bold">${c.type}</td>
+                            <td class="font-bold">${c.call_type || c.type}</td>
                             <td class="text-secondary">${c.location}</td>
                             <td><span class="tag tag-${c.status==='completed'?'green':'red'}">${STATUS_LABELS[c.status]||c.status}</span></td>
                             <td>${(c.units||[]).length} units</td>

@@ -1,5 +1,39 @@
 local IsAuthorized = function(src) return exports['cipher-mdt']:IsAuthorized(src) end
+local HasPanel = function(src, panel) return exports['cipher-mdt']:HasPanel(src, panel) end
 local activeCalls = {} -- in-memory cache for live calls
+
+local function UsesExternalDispatch()
+    return MdtDispatchBridge.IsExternal()
+end
+
+local function ExternalCall(call)
+    local units = {}
+    for _, unit in pairs(call.units or {}) do units[#units + 1] = unit end
+    return {
+        id = call.id, call_number = call.id, call_type = call.title or call.type,
+        type = call.type, description = call.description, location = call.street,
+        coords = call.coords, priority = call.priority, units = units, notes = call.notes or {},
+        status = call.status == 'active' and 'active' or call.status,
+        caller_name = call.caller, created_by_name = call.caller,
+        created_at = os.date('!%Y-%m-%dT%H:%M:%SZ', call.createdAt or os.time()),
+        operation = call.operation, external = true,
+    }
+end
+
+AddEventHandler('cipher-dispatch:provider:mdt:callCreated', function(call)
+    if not UsesExternalDispatch() then return end
+    TriggerClientEvent('cipher-mdt:client:newCall', -1, ExternalCall(call))
+end)
+
+AddEventHandler('cipher-dispatch:provider:mdt:callClosed', function(call)
+    if not UsesExternalDispatch() then return end
+    TriggerClientEvent('cipher-mdt:client:callClosed', -1, call.id)
+end)
+
+AddEventHandler('cipher-dispatch:provider:mdt:callUpdated', function(call)
+    if not UsesExternalDispatch() then return end
+    TriggerClientEvent('cipher-mdt:client:callUpdated', -1, ExternalCall(call))
+end)
 
 -- Generate a unique call number: e.g. CAD-20240615-001
 local function GenerateCallNumber()
@@ -10,7 +44,16 @@ local function GenerateCallNumber()
 end
 
 lib.callback.register('cipher-mdt:server:getActiveCalls', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'cad') then return nil end
+    if UsesExternalDispatch() then
+        local result = {}
+        local calls = MdtDispatchBridge.Call('getActiveCalls')
+        for _, call in pairs(type(calls) == 'table' and calls or {}) do
+            if call.status == 'active' then result[#result + 1] = ExternalCall(call) end
+        end
+        table.sort(result, function(a, b) return a.created_at > b.created_at end)
+        return result
+    end
     local calls = MySQL.query.await([[
         SELECT * FROM mdt_cad_calls
         WHERE status NOT IN ('completed', 'cancelled')
@@ -25,7 +68,12 @@ lib.callback.register('cipher-mdt:server:getActiveCalls', function(source)
 end)
 
 lib.callback.register('cipher-mdt:server:createCall', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'cad') then return false end
+    if UsesExternalDispatch() then
+        local coords = data.coords or GetEntityCoords(GetPlayerPed(source))
+        local id, call = MdtDispatchBridge.Call('createCall', source, { type = 'custom', title = data.type, description = data.description, street = data.location, coords = coords, priority = data.priority, caller = GetPlayerName(source) })
+        return call and ExternalCall(call) or false
+    end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
     if not data.type or not data.description or not data.location then return false end
 
@@ -65,7 +113,8 @@ lib.callback.register('cipher-mdt:server:createCall', function(source, data)
 end)
 
 lib.callback.register('cipher-mdt:server:respondToCall', function(source, callId)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'cad') then return false end
+    if UsesExternalDispatch() then return MdtDispatchBridge.Call('respond', source, callId) end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
 
     local call = MySQL.single.await('SELECT units FROM mdt_cad_calls WHERE id = ?', { callId })
@@ -99,7 +148,8 @@ lib.callback.register('cipher-mdt:server:respondToCall', function(source, callId
 end)
 
 lib.callback.register('cipher-mdt:server:updateCallStatus', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'cad') then return false end
+    if UsesExternalDispatch() then return MdtDispatchBridge.Call('setCallStatus', source, data.callId, data.status) end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
 
     MySQL.update.await('UPDATE mdt_cad_calls SET status = ?, updated_at = NOW() WHERE id = ?', {
@@ -121,8 +171,9 @@ lib.callback.register('cipher-mdt:server:updateCallStatus', function(source, dat
 end)
 
 lib.callback.register('cipher-mdt:server:addCallNote', function(source, data)
-    if not IsAuthorized(source) then return false end
+    if not HasPanel(source, 'cad') then return false end
     local officer = exports['cipher-mdt']:GetOfficerInfo(source)
+    if UsesExternalDispatch() then return MdtDispatchBridge.Call('addCallNote', source, data.callId, { author = officer.name, text = data.text }) end
 
     local call = MySQL.single.await('SELECT notes FROM mdt_cad_calls WHERE id = ?', { data.callId })
     if not call then return false end
@@ -143,7 +194,11 @@ end)
 RegisterNetEvent('cipher-mdt:server:respondToCall')
 AddEventHandler('cipher-mdt:server:respondToCall', function(data)
     local src = source
-    if not IsAuthorized(src) then return end
+    if not HasPanel(src, 'cad') then return end
+    if UsesExternalDispatch() then
+        MdtDispatchBridge.Call('respond', src, data and data.callId)
+        return
+    end
     local officer = exports['cipher-mdt']:GetOfficerInfo(src)
     if not officer or not data.callId then return end
 
@@ -181,7 +236,7 @@ end)
 
 -- Pull historical calls (last 50 completed)
 lib.callback.register('cipher-mdt:server:getCallHistory', function(source)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'callhistory') then return nil end
     local calls = MySQL.query.await([[
         SELECT * FROM mdt_cad_calls
         WHERE status IN ('completed', 'cancelled')
@@ -196,7 +251,7 @@ end)
 
 -- Searchable callout history (all statuses, with filters)
 lib.callback.register('cipher-mdt:server:searchCallHistory', function(source, data)
-    if not IsAuthorized(source) then return nil end
+    if not HasPanel(source, 'callhistory') then return nil end
     data = data or {}
     local where, params = {}, {}
 

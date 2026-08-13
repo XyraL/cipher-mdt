@@ -265,3 +265,154 @@ CREATE TABLE IF NOT EXISTS `mdt_audit_log` (
     KEY `idx_officer` (`officer_name`),
     KEY `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  EMS  (v1.5.0)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Patient Care Reports ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_pcr` (
+    `id`                INT AUTO_INCREMENT PRIMARY KEY,
+    `patient_citizenid` VARCHAR(50)  NOT NULL,
+    `patient_name`      VARCHAR(100) NOT NULL,
+    `chief_complaint`   VARCHAR(255) NOT NULL,
+    `narrative`         TEXT         DEFAULT NULL,
+    `injuries`          LONGTEXT     DEFAULT NULL,   -- JSON array
+    `treatments`        LONGTEXT     DEFAULT NULL,   -- JSON array
+    `vitals`            LONGTEXT     DEFAULT NULL,   -- JSON object
+    `disposition`       VARCHAR(32)  NOT NULL DEFAULT 'treated_released',
+    `transported_to`    VARCHAR(100) DEFAULT NULL,
+    `priority`          TINYINT      NOT NULL DEFAULT 3,   -- 1 critical … 4 minor
+    `status`            VARCHAR(16)  NOT NULL DEFAULT 'open',
+    `medic_citizenid`   VARCHAR(50)  NOT NULL,
+    `medic_name`        VARCHAR(100) NOT NULL,
+    `created_at`        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_patient` (`patient_citizenid`),
+    KEY `idx_medic`   (`medic_citizenid`),
+    KEY `idx_status`  (`status`),
+    KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Medical record (one row per civilian) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_medical` (
+    `citizenid`   VARCHAR(50) PRIMARY KEY,
+    `blood_type`  VARCHAR(8)  DEFAULT NULL,
+    `allergies`   LONGTEXT    DEFAULT NULL,   -- JSON array
+    `conditions`  LONGTEXT    DEFAULT NULL,   -- JSON array
+    `medications` LONGTEXT    DEFAULT NULL,   -- JSON array
+    `dnr`         TINYINT(1)  NOT NULL DEFAULT 0,
+    `organ_donor` TINYINT(1)  NOT NULL DEFAULT 0,
+    `notes`       TEXT        DEFAULT NULL,
+    `updated_at`  TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Dated medical history entries ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_medical_history` (
+    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+    `citizenid`        VARCHAR(50)  NOT NULL,
+    `entry_type`       VARCHAR(32)  NOT NULL DEFAULT 'note',
+    `entry`            TEXT         NOT NULL,
+    `author_citizenid` VARCHAR(50)  NOT NULL,
+    `author_name`      VARCHAR(100) NOT NULL,
+    `created_at`       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_citizenid` (`citizenid`),
+    KEY `idx_created`   (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Controlled substance log ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_narc_log` (
+    `id`                INT AUTO_INCREMENT PRIMARY KEY,
+    `drug`              VARCHAR(64)  NOT NULL,
+    `amount`            DECIMAL(10,2) NOT NULL DEFAULT 0,
+    `unit`              VARCHAR(16)  NOT NULL DEFAULT 'mg',
+    `action`            VARCHAR(16)  NOT NULL,   -- drawn | administered | wasted
+    `patient_citizenid` VARCHAR(50)  DEFAULT NULL,
+    `patient_name`      VARCHAR(100) DEFAULT NULL,
+    `witness_name`      VARCHAR(100) DEFAULT NULL,
+    `notes`             TEXT         DEFAULT NULL,
+    `medic_citizenid`   VARCHAR(50)  NOT NULL,
+    `medic_name`        VARCHAR(100) NOT NULL,
+    `pcr_id`            INT          DEFAULT NULL,
+    `created_at`        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_medic`   (`medic_citizenid`),
+    KEY `idx_drug`    (`drug`),
+    KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  FIRE  (v1.5.0)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Fire incident reports ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_fire_incidents` (
+    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+    `incident_type`    VARCHAR(64)  NOT NULL,
+    `address`          VARCHAR(255) NOT NULL,
+    `alarm_level`      TINYINT      NOT NULL DEFAULT 1,
+    `cause`            VARCHAR(64)  NOT NULL DEFAULT 'undetermined',
+    `structure_type`   VARCHAR(64)  DEFAULT NULL,
+    `narrative`        TEXT         DEFAULT NULL,
+    `units_responded`  LONGTEXT     DEFAULT NULL,   -- JSON array
+    `personnel`        LONGTEXT     DEFAULT NULL,   -- JSON array
+    `casualties`       LONGTEXT     DEFAULT NULL,   -- JSON array
+    `damage_estimate`  INT          NOT NULL DEFAULT 0,
+    `acres_burned`     DECIMAL(10,2) NOT NULL DEFAULT 0,
+    `water_used`       INT          NOT NULL DEFAULT 0,
+    `status`           VARCHAR(16)  NOT NULL DEFAULT 'open',
+    `created_by`       VARCHAR(50)  NOT NULL,
+    `created_by_name`  VARCHAR(100) NOT NULL,
+    `created_at`       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_creator` (`created_by`),
+    KEY `idx_status`  (`status`),
+    KEY `idx_type`    (`incident_type`),
+    KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Hazmat ──────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_hazmat` (
+    `id`                INT AUTO_INCREMENT PRIMARY KEY,
+    `substance`         VARCHAR(128) NOT NULL,
+    `un_number`         VARCHAR(16)  DEFAULT NULL,
+    `hazard_class`      VARCHAR(32)  DEFAULT NULL,
+    `location`          VARCHAR(255) NOT NULL,
+    `quantity`          VARCHAR(64)  DEFAULT NULL,
+    `containment`       VARCHAR(32)  NOT NULL DEFAULT 'ongoing',
+    `evacuation_radius` INT          NOT NULL DEFAULT 0,
+    `injuries`          INT          NOT NULL DEFAULT 0,
+    `narrative`         TEXT         DEFAULT NULL,
+    `status`            VARCHAR(16)  NOT NULL DEFAULT 'active',
+    `incident_id`       INT          DEFAULT NULL,
+    `created_by`        VARCHAR(50)  NOT NULL,
+    `created_by_name`   VARCHAR(100) NOT NULL,
+    `created_at`        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_status`   (`status`),
+    KEY `idx_incident` (`incident_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Apparatus roster ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_apparatus` (
+    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+    `unit_id`    VARCHAR(32)  NOT NULL,          -- e.g. "Engine 12"
+    `type`       VARCHAR(32)  NOT NULL DEFAULT 'engine',
+    `station`    VARCHAR(64)  DEFAULT NULL,
+    `status`     VARCHAR(24)  NOT NULL DEFAULT 'in_service',
+    `notes`      TEXT         DEFAULT NULL,
+    `created_at` TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_unit` (`unit_id`),
+    KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Apparatus inspection log ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `mdt_apparatus_log` (
+    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+    `apparatus_id`     INT          NOT NULL,
+    `check_type`       VARCHAR(32)  NOT NULL DEFAULT 'daily',
+    `result`           VARCHAR(16)  NOT NULL DEFAULT 'pass',
+    `mileage`          INT          NOT NULL DEFAULT 0,
+    `notes`            TEXT         DEFAULT NULL,
+    `author_citizenid` VARCHAR(50)  NOT NULL,
+    `author_name`      VARCHAR(100) NOT NULL,
+    `created_at`       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_apparatus` (`apparatus_id`),
+    KEY `idx_created`   (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

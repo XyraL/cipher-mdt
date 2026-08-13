@@ -1,420 +1,458 @@
-// CipherMDT Map Panel — live unit tracker, no external image required
+/* CipherMDT — Live Map
+ *
+ * Leaflet over a tile pyramid of the San Andreas satellite render. The game's
+ * own pause map can't be rendered inside NUI (it's an engine render target
+ * CEF has no access to), so this is an image map calibrated to world coords.
+ *
+ * Tiles: html/assets/maps/tiles/{z}_{x}_{y}.webp — regenerate with
+ * `node tools/build-map-tiles.js` after swapping the source image.
+ */
 
-const MAP_W = 1000, MAP_H = 1000;
+const MAP = {
+    imageW: 4096,
+    imageH: 6144,
+    tileSize: 512,
+    nativeZoom: 4,     // zoom at which the render sits 1:1 (see the build script)
+    maxZoom: 6,        // Leaflet upscales past nativeZoom so you can keep zooming
 
-// GTA V approximate world-to-canvas mapping
-const WORLD = { minX: -3900, maxX: 4300, minY: -4500, maxY: 8100 };
+    // The GTA world rectangle this render covers. If unit dots sit slightly off
+    // where they should be, nudge these — stand somewhere recognisable, note
+    // your coords with the map open, and adjust until the dot lands on you.
+    world: { minX: -3900, maxX: 4300, minY: -4500, maxY: 8100 },
+};
 
-function worldToCanvas(wx, wy) {
+// Mirrors the department colours in config.lua.
+const JOB_COLOR = {
+    police:'#6366f1', sheriff:'#818cf8', swat:'#4f46e5', statepolice:'#818cf8',
+    ambulance:'#22c55e', ems:'#22c55e',
+    fire:'#ef4444', firefighter:'#ef4444',
+};
+const jobColor = job => JOB_COLOR[job] || '#6366f1';
+
+const LEGEND = [
+    { label:'Police', color:'#6366f1' },
+    { label:'EMS',    color:'#22c55e' },
+    { label:'Fire',   color:'#ef4444' },
+];
+
+const PRIORITY_COLOR = { 1:'#ef4444', 2:'#f59e0b', 3:'#6366f1' };
+
+let _map = null;
+let _unitLayer = null, _callLayer = null;
+let _unitMarkers = {}, _callMarkers = {};
+let _mapInterval = null;
+let _followCid = null;
+let _mapUnits = [], _mapCalls = [];
+
+// ── Coordinate transform ──────────────────────────────────────────────────
+function worldToLatLng(wx, wy) {
+    const W = MAP.world;
+    const px = ((wx - W.minX) / (W.maxX - W.minX)) * MAP.imageW;
+    const py = ((W.maxY - wy) / (W.maxY - W.minY)) * MAP.imageH;
+    return _map.unproject([px, py], MAP.nativeZoom);
+}
+
+function latLngToWorld(latlng) {
+    const W = MAP.world;
+    const p = _map.project(latlng, MAP.nativeZoom);
     return {
-        x: ((wx - WORLD.minX) / (WORLD.maxX - WORLD.minX)) * MAP_W,
-        y: ((WORLD.maxY - wy) / (WORLD.maxY - WORLD.minY)) * MAP_H,
+        x: W.minX + (p.x / MAP.imageW) * (W.maxX - W.minX),
+        y: W.maxY - (p.y / MAP.imageH) * (W.maxY - W.minY),
     };
 }
 
-const JOB_COLOR = {
-    police   : '#6366f1',
-    sheriff  : '#818cf8',
-    ambulance: '#22c55e',
-    fire     : '#ef4444',
-};
-function jobColor(job) { return JOB_COLOR[job] || '#6366f1'; }
+// ── Markers ───────────────────────────────────────────────────────────────
+function unitIcon(unit) {
+    const color = jobColor(unit.job);
+    const label = unit.badge && unit.badge !== 'N/A'
+        ? `${(unit.name || '').split(' ')[0]} ${unit.badge}`
+        : (unit.name || 'Unit').split(' ')[0];
 
-// Named landmarks for map reference (world coords)
-const LANDMARKS = [
-    { name: 'LS Airport',     x:  -979, y: -2920, icon: '✈' },
-    { name: 'LSPD',           x:   428, y: -980,  icon: '⬡' },
-    { name: 'Pillbox Hill',   x:   185, y: -935,  icon: '🏥' },
-    { name: 'Legion Square',  x:   195, y: -1640, icon: '◈' },
-    { name: 'Vinewood',       x:   610, y:  265,  icon: '★' },
-    { name: 'Rockford Hills', x:  -750, y:  530,  icon: '◎' },
-    { name: 'Sandy Shores',   x:  1900, y: 3700,  icon: '◈' },
-    { name: 'Paleto Bay',     x: -248,  y: 6340,  icon: '◈' },
-    { name: 'Del Perro',      x: -1700, y:  -310, icon: '◎' },
-    { name: 'LS Port',        x:  -300, y: -2600, icon: '⚓' },
-    { name: 'Maze Bank',      x:  -75,  y:  -820, icon: '▦' },
-    { name: 'Mirror Park',    x:  1190, y:  -1480, icon: '◎' },
-];
+    // The arrow points along the unit's heading; GTA headings run anticlockwise
+    // from north, CSS rotation runs clockwise, hence the negation.
+    return L.divIcon({
+        className: 'cmap-unit',
+        html: `
+            <div class="cmap-unit-wrap">
+                <div class="cmap-unit-arrow" style="transform:rotate(${-(unit.heading || 0)}deg);border-bottom-color:${color};"></div>
+                <div class="cmap-unit-dot" style="background:${color};box-shadow:0 0 10px ${color};"></div>
+                <div class="cmap-unit-label" style="border-color:${color};">${label}</div>
+            </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+    });
+}
 
-// Zone color fills (very rough bounding boxes, painted before grid)
-const ZONES = [
-    { name: 'Downtown LS',  x1: -400, y1: -2000, x2:  700, y2:  -600, color: 'rgba(99,102,241,0.04)' },
-    { name: 'Vinewood',     x1:  300, y1:  -200,  x2:  950, y2:   700, color: 'rgba(168,85,247,0.04)' },
-    { name: 'Sandy Shores', x1: 1300, y1: 2900,   x2: 3500, y2: 4700,  color: 'rgba(245,158,11,0.04)' },
-    { name: 'Paleto Bay',   x1: -800, y1: 5600,   x2:  400, y2: 7000,  color: 'rgba(34,197,94,0.04)'  },
-    { name: 'Del Perro',    x1:-2200, y1:  -700,  x2: -800, y2:   300, color: 'rgba(14,165,233,0.04)' },
-    { name: 'LS Airport',   x1:-1600, y1:-3600,   x2:  -50, y2:-2200,  color: 'rgba(99,102,241,0.06)' },
-];
+function callIcon(call) {
+    const color = PRIORITY_COLOR[call.priority] || '#f59e0b';
+    return L.divIcon({
+        className: 'cmap-call',
+        html: `
+            <div class="cmap-call-wrap">
+                <div class="cmap-call-pulse" style="background:${color};"></div>
+                <div class="cmap-call-diamond" style="background:${color};"></div>
+                <div class="cmap-call-label" style="border-color:${color};">${call.call_number || call.id}</div>
+            </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+    });
+}
 
-let _mapUnits   = [];
-let _mapCalls   = [];
-let _mapCanvas  = null;
-let _mapCtx     = null;
-let _mapInterval= null;
-let _selectedUnit = null;
-let _panX = 0, _panY = 0, _zoom = 1;
-let _isDragging = false, _dragStart = null;
+function unitPopup(u) {
+    return `
+        <div class="cmap-pop">
+            <div class="cmap-pop-name" style="color:${jobColor(u.job)};">${u.name || 'Unit'}</div>
+            <div class="cmap-pop-meta">${(u.department || u.job || '').toUpperCase()} · Badge ${u.badge || '—'}</div>
+            ${u.status ? `<div class="cmap-pop-meta">Status ${u.status}</div>` : ''}
+            <div class="cmap-pop-actions">
+                <button onclick="mapFollow('${u.citizenid}')">Follow</button>
+                <button onclick="mapRouteTo(${(u.coords||{}).x||0},${(u.coords||{}).y||0})">Route</button>
+            </div>
+        </div>`;
+}
 
+function callPopup(c) {
+    return `
+        <div class="cmap-pop">
+            <div class="cmap-pop-name">${c.call_number || ('#' + c.id)}</div>
+            <div class="cmap-pop-meta">${c.call_type || c.type || 'Call'}</div>
+            <div class="cmap-pop-meta">📍 ${c.location || 'Unknown'}</div>
+            <div class="cmap-pop-actions">
+                <button onclick="switchTab('cad')">Open in CAD</button>
+                ${c.coords ? `<button onclick="mapRouteTo(${c.coords.x||0},${c.coords.y||0})">Route</button>` : ''}
+            </div>
+        </div>`;
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────────
 function initMapPanel() {
     const panel = document.getElementById('tab-map');
-    panel.style.display = 'flex';
-    panel.style.flexDirection = 'column';
-    panel.style.height = '100%';
-
+    // No inline display/height: .tab-panel already sets those, and an inline
+    // display would outrank the class and leave the map over every other tab.
     panel.innerHTML = `
         <div class="panel-header" style="flex-shrink:0;">
             <div class="panel-header-left">
-                <div class="panel-title">Unit Tracker</div>
+                <div class="panel-title">Live Map</div>
                 <div class="panel-subtitle" id="map-unit-count">Loading units…</div>
             </div>
-            <div class="panel-actions" style="gap:6px;">
-                <button class="btn btn-ghost btn-sm" onclick="mapResetView()">⊡ Reset</button>
-                <button class="btn btn-ghost btn-sm" onclick="mapZoom(1.35)" style="font-size:16px;padding:4px 12px;">+</button>
-                <button class="btn btn-ghost btn-sm" onclick="mapZoom(0.74)" style="font-size:16px;padding:4px 12px;">−</button>
-                <button class="btn btn-primary btn-sm" onclick="refreshMapData()">↻ Refresh</button>
+            <div class="panel-actions">
+                <button class="btn btn-ghost btn-sm" id="map-follow-off" style="display:none;"
+                        onclick="mapFollow(null)">✕ Stop following</button>
+                <button class="btn btn-ghost btn-sm" onclick="mapResetView()">⤢ Reset</button>
+                <button class="btn btn-ghost btn-sm" onclick="refreshMapData()">↻ Refresh</button>
             </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 280px;gap:14px;flex:1;min-height:0;overflow:hidden;">
-            <!-- Map Canvas -->
-            <div style="position:relative;overflow:hidden;border-radius:var(--radius);
-                        border:1px solid var(--border-light);background:#060810;min-height:0;">
-                <canvas id="mdt-map-canvas" width="${MAP_W}" height="${MAP_H}"
-                        style="width:100%;height:100%;cursor:grab;display:block;"></canvas>
-                <div id="map-tooltip" style="
-                    display:none;position:absolute;background:var(--bg-panel);
-                    border:1px solid var(--border-light);border-radius:8px;
-                    padding:8px 12px;font-size:12px;pointer-events:none;
-                    box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:10;min-width:140px;
-                "></div>
-                <div style="position:absolute;bottom:10px;left:12px;font-size:10px;color:rgba(255,255,255,.2);
-                            font-family:var(--font-mono);user-select:none;">
-                    Scroll to zoom · Drag to pan
-                </div>
-                <div style="position:absolute;top:10px;right:10px;font-size:10px;color:rgba(255,255,255,.2);
-                            font-family:var(--font-mono);user-select:none;" id="map-zoom-display">
-                    ×1.0
-                </div>
-            </div>
-
-            <!-- Sidebar -->
-            <div style="display:flex;flex-direction:column;gap:10px;overflow:hidden;min-height:0;">
-                <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--text-muted);
-                            text-transform:uppercase;flex-shrink:0;">On-Duty Units</div>
-                <div id="map-unit-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0;"></div>
-                <div style="border-top:1px solid var(--border);padding-top:10px;flex-shrink:0;">
-                    <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--text-muted);
-                                text-transform:uppercase;margin-bottom:8px;">Legend</div>
-                    <div style="display:flex;flex-direction:column;gap:5px;">
-                        ${Object.entries(JOB_COLOR).map(([job, color]) => `
-                            <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                                <div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0;
-                                            box-shadow:0 0 5px ${color};"></div>
-                                <span style="color:var(--text-muted);text-transform:capitalize;">${job}</span>
-                            </div>`).join('')}
-                        <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                            <div style="width:9px;height:9px;background:#f59e0b;transform:rotate(45deg);flex-shrink:0;
-                                        box-shadow:0 0 5px #f59e0b;"></div>
-                            <span style="color:var(--text-muted);">Active CAD Call</span>
-                        </div>
+        <div class="cmap-body">
+            <div id="cmap-canvas"></div>
+            <div class="cmap-side">
+                <div class="cmap-side-head">On-Duty Units</div>
+                <div id="map-unit-list" class="cmap-list"></div>
+                <div class="cmap-legend">
+                    <div class="cmap-side-head">Legend</div>
+                    ${LEGEND.map(l => `
+                        <div class="cmap-legend-row">
+                            <span class="cmap-swatch" style="background:${l.color};box-shadow:0 0 5px ${l.color};"></span>
+                            <span>${l.label}</span>
+                        </div>`).join('')}
+                    <div class="cmap-legend-row">
+                        <span class="cmap-swatch cmap-swatch-diamond" style="background:#f59e0b;"></span>
+                        <span>Active CAD call</span>
                     </div>
+                    <div class="cmap-hint">Click the map to set a waypoint</div>
                 </div>
             </div>
         </div>`;
 
-    _mapCanvas = document.getElementById('mdt-map-canvas');
-    _mapCtx    = _mapCanvas.getContext('2d');
-
-    _mapCanvas.addEventListener('wheel',     onMapWheel,     { passive: false });
-    _mapCanvas.addEventListener('mousedown', onMapMouseDown);
-    _mapCanvas.addEventListener('mousemove', onMapMouseMove);
-    _mapCanvas.addEventListener('mouseup',   () => { _isDragging = false; _mapCanvas.style.cursor = 'grab'; });
-    _mapCanvas.addEventListener('mouseleave',() => { _isDragging = false; document.getElementById('map-tooltip').style.display='none'; });
-
-    mapResetView();
-    refreshMapData();
-
-    if (_mapInterval) clearInterval(_mapInterval);
-    _mapInterval = setInterval(refreshMapData, 6000);
+    // Leaflet needs the container laid out before it measures, and the tab was
+    // display:none until a moment ago — so build on the next frame.
+    requestAnimationFrame(() => buildLeaflet());
 }
 
+function buildLeaflet() {
+    const el = document.getElementById('cmap-canvas');
+    if (!el || typeof L === 'undefined') return;
+
+    if (_map) { _map.remove(); _map = null; }
+    _unitMarkers = {}; _callMarkers = {};
+
+    _map = L.map(el, {
+        crs: L.CRS.Simple,
+        minZoom: 1,
+        maxZoom: MAP.maxZoom,
+        zoomControl: true,
+        attributionControl: false,
+        zoomSnap: 0.25,
+        wheelPxPerZoomLevel: 90,
+        preferCanvas: false,
+    });
+
+    const sw = _map.unproject([0, MAP.imageH], MAP.nativeZoom);
+    const ne = _map.unproject([MAP.imageW, 0], MAP.nativeZoom);
+    const bounds = new L.LatLngBounds(sw, ne);
+
+    // Flat filenames rather than {z}/{x}/{y} directories: fxmanifest expands a
+    // single-level glob reliably, nested ** does not.
+    const tiles = L.tileLayer('assets/maps/tiles/{z}_{x}_{y}.webp', {
+        tileSize: MAP.tileSize,
+        minZoom: 0,
+        maxZoom: MAP.maxZoom,
+        maxNativeZoom: MAP.nativeZoom,   // upscale past this instead of 404ing
+        noWrap: true,
+        bounds,
+    }).addTo(_map);
+
+    // A blank map with no explanation is the worst failure mode: the markers
+    // still draw, so it looks like the map "just doesn't work". Say what is
+    // actually missing, once, with the URL that failed.
+    let tileErrors = 0;
+    tiles.on('tileerror', (e) => {
+        tileErrors++;
+        const url = (e.tile && e.tile.src) || '(unknown)';
+        if (tileErrors === 1) {
+            console.error('[CipherMDT] map tile failed to load:', url);
+            console.error('[CipherMDT] Check that fxmanifest ships ' +
+                          'html/assets/maps/tiles/*.webp and that the tiles exist. ' +
+                          'Rebuild with: node tools/build-map-tiles.js');
+            showToast('Map tiles missing',
+                      'The map image failed to load — see F8 console.', 'error', 9000);
+        }
+    });
+
+    _map.setMaxBounds(bounds.pad(0.15));
+    _map.fitBounds(bounds);
+
+    _callLayer = L.layerGroup().addTo(_map);
+    _unitLayer = L.layerGroup().addTo(_map);
+
+    // Click anywhere to drop a GPS waypoint in-game.
+    _map.on('click', (e) => {
+        const w = latLngToWorld(e.latlng);
+        nuiPost('setWaypoint', { x: w.x, y: w.y });
+        showToast('Waypoint set', `${Math.round(w.x)}, ${Math.round(w.y)}`, 'success', 2500);
+    });
+
+    // Panning by hand cancels follow — otherwise the map fights you.
+    _map.on('dragstart', () => { if (_followCid) mapFollow(null); });
+
+    refreshMapData();
+    if (_mapInterval) clearInterval(_mapInterval);
+    _mapInterval = setInterval(refreshMapData, 5000);
+}
+
+function mapResetView() {
+    if (!_map) return;
+    _followCid = null;
+    updateFollowButton();
+    const sw = _map.unproject([0, MAP.imageH], MAP.nativeZoom);
+    const ne = _map.unproject([MAP.imageW, 0], MAP.nativeZoom);
+    _map.fitBounds(new L.LatLngBounds(sw, ne));
+}
+
+function updateFollowButton() {
+    const b = document.getElementById('map-follow-off');
+    if (b) b.style.display = _followCid ? '' : 'none';
+}
+
+function mapFollow(citizenid) {
+    _followCid = citizenid || null;
+    updateFollowButton();
+    if (!_followCid) return;
+    const u = _mapUnits.find(x => x.citizenid === _followCid);
+    if (u && u.coords) _map.setView(worldToLatLng(u.coords.x, u.coords.y), Math.max(_map.getZoom(), 3));
+}
+
+function mapRouteTo(x, y) {
+    nuiPost('setWaypoint', { x, y });
+    showToast('Waypoint set', `${Math.round(x)}, ${Math.round(y)}`, 'success', 2500);
+}
+
+// ── Data ──────────────────────────────────────────────────────────────────
 async function refreshMapData() {
+    if (!_map) return;
     const [units, calls] = await Promise.all([
         nuiFetch('getUnits', {}),
-        nuiFetch('getActiveCalls', {}),
+        (MDT.panels || []).includes('cad') ? nuiFetch('getActiveCalls', {}) : Promise.resolve([]),
     ]);
     _mapUnits = Array.isArray(units) ? units : [];
     _mapCalls = Array.isArray(calls) ? calls : [];
-    drawMap();
+
+    syncUnitMarkers();
+    syncCallMarkers();
     renderUnitList();
+
     const sub = document.getElementById('map-unit-count');
-    if (sub) sub.textContent = `${_mapUnits.length} unit${_mapUnits.length !== 1 ? 's' : ''} online · ${_mapCalls.length} active call${_mapCalls.length !== 1 ? 's' : ''}`;
-}
-
-function mapResetView() { _panX = 0; _panY = 0; _zoom = 1; drawMap(); }
-
-function mapZoom(factor) {
-    _zoom = Math.min(8, Math.max(0.4, _zoom * factor));
-    drawMap();
-}
-
-function onMapWheel(e) {
-    e.preventDefault();
-    const f = e.deltaY < 0 ? 1.15 : 0.87;
-    const rect = _mapCanvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) / rect.width  * MAP_W;
-    const my = (e.clientY - rect.top)  / rect.height * MAP_H;
-    _panX = mx - f * (mx - _panX);
-    _panY = my - f * (my - _panY);
-    _zoom = Math.min(8, Math.max(0.4, _zoom * f));
-    drawMap();
-}
-
-function onMapMouseDown(e) {
-    _isDragging = true;
-    _dragStart  = { x: e.clientX, y: e.clientY, px: _panX, py: _panY };
-    _mapCanvas.style.cursor = 'grabbing';
-}
-
-function onMapMouseMove(e) {
-    const rect   = _mapCanvas.getBoundingClientRect();
-    const scaleX = MAP_W / rect.width;
-    const scaleY = MAP_H / rect.height;
-
-    if (_isDragging && _dragStart) {
-        _panX = _dragStart.px + (e.clientX - _dragStart.x) * scaleX;
-        _panY = _dragStart.py + (e.clientY - _dragStart.y) * scaleY;
-        drawMap();
-        return;
+    if (sub) {
+        sub.textContent = `${_mapUnits.length} unit${_mapUnits.length !== 1 ? 's' : ''} online · ` +
+                          `${_mapCalls.length} active call${_mapCalls.length !== 1 ? 's' : ''}`;
     }
 
-    // Tooltip hover
-    const mx  = (e.clientX - rect.left) * scaleX;
-    const my  = (e.clientY - rect.top)  * scaleY;
-    const tt  = document.getElementById('map-tooltip');
-    if (!tt) return;
-    let hit = null;
-
-    for (const unit of _mapUnits) {
-        if (!unit.coords) continue;
-        const cp = worldToCanvas(unit.coords.x, unit.coords.y);
-        const sx = (cp.x * _zoom + _panX);
-        const sy = (cp.y * _zoom + _panY);
-        if (Math.hypot(mx - sx, my - sy) < 14) { hit = { type: 'unit', data: unit }; break; }
+    if (_followCid) {
+        const u = _mapUnits.find(x => x.citizenid === _followCid);
+        if (u && u.coords) _map.panTo(worldToLatLng(u.coords.x, u.coords.y), { animate: true, duration: 0.6 });
     }
-    if (!hit) {
-        for (const call of _mapCalls) {
-            if (!call.coords) continue;
-            const cp = worldToCanvas(call.coords.x, call.coords.y);
-            const sx = (cp.x * _zoom + _panX);
-            const sy = (cp.y * _zoom + _panY);
-            if (Math.hypot(mx - sx, my - sy) < 14) { hit = { type: 'call', data: call }; break; }
-        }
-    }
+}
 
-    if (hit) {
-        tt.style.display = 'block';
-        tt.style.left = ((e.clientX - rect.left) / rect.width  * 100 + 1) + '%';
-        tt.style.top  = ((e.clientY - rect.top)  / rect.height * 100 - 4) + '%';
-        if (hit.type === 'unit') {
-            const u = hit.data;
-            tt.innerHTML = `
-                <div style="font-weight:700;font-size:13px;color:var(--text-primary);margin-bottom:4px;">${u.name}</div>
-                <div style="font-size:11px;color:var(--text-muted);">Badge: <strong style="color:${jobColor(u.job)};">${u.badge || '—'}</strong></div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:capitalize;">${u.job}</div>`;
+// Move existing markers rather than rebuilding the layer, so popups stay open
+// and the icons don't flicker every refresh.
+function syncUnitMarkers() {
+    const seen = {};
+    for (const u of _mapUnits) {
+        if (!u.coords) continue;
+        seen[u.citizenid] = true;
+        const ll = worldToLatLng(u.coords.x, u.coords.y);
+        const existing = _unitMarkers[u.citizenid];
+        if (existing) {
+            existing.setLatLng(ll);
+            existing.setIcon(unitIcon(u));
+            existing.setPopupContent(unitPopup(u));
         } else {
-            const c = hit.data;
-            tt.innerHTML = `
-                <div style="font-weight:700;font-size:12px;color:#f59e0b;margin-bottom:4px;">${c.call_number || c.id}</div>
-                <div style="font-size:11px;color:var(--text-primary);">${c.call_type || c.type || 'Call'}</div>
-                <div style="font-size:11px;color:var(--text-muted);">📍 ${c.location || '—'}</div>`;
-        }
-    } else {
-        tt.style.display = 'none';
-    }
-}
-
-function drawMap() {
-    if (!_mapCtx) return;
-    const ctx = _mapCtx;
-    ctx.clearRect(0, 0, MAP_W, MAP_H);
-    ctx.save();
-    ctx.translate(_panX, _panY);
-    ctx.scale(_zoom, _zoom);
-
-    // Background
-    ctx.fillStyle = '#060810';
-    ctx.fillRect(-_panX / _zoom, -_panY / _zoom, MAP_W / _zoom, MAP_H / _zoom);
-
-    // Zone fills
-    for (const z of ZONES) {
-        const a = worldToCanvas(z.x1, z.y1);
-        const b = worldToCanvas(z.x2, z.y2);
-        ctx.fillStyle = z.color;
-        ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y),
-                     Math.abs(b.x - a.x), Math.abs(b.y - a.y));
-    }
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(99,102,241,0.07)';
-    ctx.lineWidth = 0.5;
-    for (let gx = 0; gx <= MAP_W; gx += 50) {
-        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, MAP_H); ctx.stroke();
-    }
-    for (let gy = 0; gy <= MAP_H; gy += 50) {
-        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(MAP_W, gy); ctx.stroke();
-    }
-
-    // Axis lines
-    const center = worldToCanvas(0, 0);
-    ctx.strokeStyle = 'rgba(99,102,241,0.18)';
-    ctx.lineWidth = 0.8;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(center.x, 0); ctx.lineTo(center.x, MAP_H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, center.y); ctx.lineTo(MAP_W, center.y); ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Landmark markers
-    for (const lm of LANDMARKS) {
-        const cp = worldToCanvas(lm.x, lm.y);
-        ctx.fillStyle = 'rgba(99,102,241,0.1)';
-        ctx.beginPath(); ctx.arc(cp.x, cp.y, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(99,102,241,0.3)';
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-
-        if (_zoom > 0.9) {
-            ctx.fillStyle = 'rgba(148,163,184,0.55)';
-            ctx.font = `${Math.round(7 / _zoom * 11)}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(lm.name, cp.x, cp.y + 14 / _zoom);
+            const m = L.marker(ll, { icon: unitIcon(u), riseOnHover: true })
+                .bindPopup(unitPopup(u), { className: 'cmap-popup', closeButton: false })
+                .addTo(_unitLayer);
+            _unitMarkers[u.citizenid] = m;
         }
     }
-
-    // CAD call markers (diamond shape)
-    for (const call of _mapCalls) {
-        if (!call.coords) continue;
-        drawCallMarker(ctx, worldToCanvas(call.coords.x, call.coords.y), call);
+    for (const cid of Object.keys(_unitMarkers)) {
+        if (!seen[cid]) { _unitLayer.removeLayer(_unitMarkers[cid]); delete _unitMarkers[cid]; }
     }
-
-    // Unit blips
-    for (const unit of _mapUnits) {
-        if (!unit.coords) continue;
-        drawUnitBlip(ctx, worldToCanvas(unit.coords.x, unit.coords.y), unit);
-    }
-
-    ctx.restore();
-
-    // Zoom indicator
-    const zd = document.getElementById('map-zoom-display');
-    if (zd) zd.textContent = `×${_zoom.toFixed(1)}`;
 }
 
-function drawUnitBlip(ctx, cp, unit) {
-    const color = jobColor(unit.job);
-    const sel   = _selectedUnit && _selectedUnit.citizenid === unit.citizenid;
-    const r     = sel ? 10 : 7;
-
-    ctx.save();
-    ctx.shadowColor = color;
-    ctx.shadowBlur  = sel ? 18 : 10;
-
-    ctx.beginPath();
-    ctx.arc(cp.x, cp.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(cp.x, cp.y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,0.6)';
-    ctx.lineWidth   = sel ? 2 : 1.2;
-    ctx.stroke();
-
-    if (_zoom > 1.8) {
-        ctx.fillStyle = '#fff';
-        ctx.font      = `bold ${Math.round(8 / _zoom * 13)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.shadowBlur= 0;
-        ctx.fillText(unit.badge || '?', cp.x, cp.y - r - 3);
+function syncCallMarkers() {
+    const seen = {};
+    for (const c of _mapCalls) {
+        const co = c.coords;
+        if (!co || (!co.x && !co.y)) continue;
+        seen[c.id] = true;
+        const ll = worldToLatLng(co.x, co.y);
+        const existing = _callMarkers[c.id];
+        if (existing) {
+            existing.setLatLng(ll);
+            existing.setPopupContent(callPopup(c));
+        } else {
+            _callMarkers[c.id] = L.marker(ll, { icon: callIcon(c) })
+                .bindPopup(callPopup(c), { className: 'cmap-popup', closeButton: false })
+                .addTo(_callLayer);
+        }
     }
-
-    ctx.restore();
-}
-
-function drawCallMarker(ctx, cp, call) {
-    const s = 8;
-    ctx.save();
-    ctx.shadowColor = '#f59e0b';
-    ctx.shadowBlur  = 12;
-    ctx.beginPath();
-    ctx.moveTo(cp.x,     cp.y - s);
-    ctx.lineTo(cp.x + s, cp.y);
-    ctx.lineTo(cp.x,     cp.y + s);
-    ctx.lineTo(cp.x - s, cp.y);
-    ctx.closePath();
-    ctx.fillStyle   = 'rgba(245,158,11,0.85)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth   = 1;
-    ctx.stroke();
-    ctx.restore();
+    for (const id of Object.keys(_callMarkers)) {
+        if (!seen[id]) { _callLayer.removeLayer(_callMarkers[id]); delete _callMarkers[id]; }
+    }
 }
 
 function renderUnitList() {
     const list = document.getElementById('map-unit-list');
     if (!list) return;
     if (!_mapUnits.length) {
-        list.innerHTML = `<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px 0;">
-            No units currently online</div>`;
+        list.innerHTML = '<div class="cmap-empty">No units on duty</div>';
         return;
     }
     list.innerHTML = _mapUnits.map(u => {
         const color = jobColor(u.job);
-        const sel   = _selectedUnit && _selectedUnit.citizenid === u.citizenid;
         return `
-            <div onclick="selectMapUnit('${u.citizenid}')" style="
-                display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;
-                background:${sel ? 'var(--bg-hover)' : 'var(--bg-input)'};
-                border:1px solid ${sel ? 'var(--accent)' : 'var(--border)'};
-                border-radius:8px;transition:all .15s;flex-shrink:0;">
-                <div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0;
-                            box-shadow:0 0 6px ${color};"></div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:12px;font-weight:600;color:var(--text-primary);
-                                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
-                    <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
-                        #${u.badge || '—'}</div>
+            <div class="cmap-unit-row ${_followCid === u.citizenid ? 'cmap-following' : ''}"
+                 onclick="mapFocusUnit('${u.citizenid}')">
+                <span class="cmap-swatch" style="background:${color};box-shadow:0 0 5px ${color};"></span>
+                <div class="cmap-unit-row-main">
+                    <div class="cmap-unit-row-name">${u.name || 'Unit'}</div>
+                    <div class="cmap-unit-row-sub">#${u.badge || '—'}${u.status ? ' · ' + u.status : ''}</div>
                 </div>
-                <div style="font-size:9px;color:${color};font-weight:700;text-transform:uppercase;
-                            flex-shrink:0;">${u.job}</div>
+                <span class="cmap-unit-row-dept" style="color:${color};">
+                    ${(u.department || u.job || '').toUpperCase()}
+                </span>
             </div>`;
     }).join('');
 }
 
-function selectMapUnit(citizenid) {
-    _selectedUnit = _mapUnits.find(u => u.citizenid === citizenid) || null;
-    if (_selectedUnit && _selectedUnit.coords) {
-        const cp = worldToCanvas(_selectedUnit.coords.x, _selectedUnit.coords.y);
-        _zoom = Math.max(_zoom, 2.5);
-        _panX = MAP_W / 2 - cp.x * _zoom;
-        _panY = MAP_H / 2 - cp.y * _zoom;
-    }
-    drawMap();
-    renderUnitList();
+function mapFocusUnit(citizenid) {
+    const u = _mapUnits.find(x => x.citizenid === citizenid);
+    if (!u || !u.coords || !_map) return;
+    _map.setView(worldToLatLng(u.coords.x, u.coords.y), Math.max(_map.getZoom(), 3));
+    const m = _unitMarkers[citizenid];
+    if (m) m.openPopup();
 }
 
-// Receive live pushes from blips.lua
-window.addEventListener('message', e => {
-    if (e.data && e.data.type === 'updateUnits') {
-        _mapUnits = e.data.units || [];
-        drawMap();
-        renderUnitList();
-        const sub = document.getElementById('map-unit-count');
-        if (sub) sub.textContent = `${_mapUnits.length} unit${_mapUnits.length !== 1 ? 's' : ''} online · ${_mapCalls.length} active call${_mapCalls.length !== 1 ? 's' : ''}`;
-    }
-});
+// ── Tab entry / exit ──────────────────────────────────────────────────────
+function loadMap() { initMapPanel(); }
 
-window.initMapPanel   = initMapPanel;
-window.refreshMapData = refreshMapData;
-window.mapResetView   = mapResetView;
-window.mapZoom        = mapZoom;
-window.selectMapUnit  = selectMapUnit;
+function stopMap() {
+    if (_mapInterval) { clearInterval(_mapInterval); _mapInterval = null; }
+    // Leaflet keeps resize/animation handlers alive; drop the instance so a
+    // reopened tab starts clean rather than measuring a detached container.
+    if (_map) { _map.remove(); _map = null; }
+    _unitMarkers = {}; _callMarkers = {};
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────
+(function injectMapStyles() {
+    if (document.getElementById('cmap-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'cmap-styles';
+    s.textContent = `
+.cmap-body { flex:1; display:grid; grid-template-columns:1fr 260px; gap:12px; min-height:0; padding:0 18px 18px; }
+#cmap-canvas { border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); background:#0a0d14; }
+.leaflet-container { background:#0a0d14; font-family:var(--font-sans); outline:none; }
+.leaflet-control-zoom a { background:var(--bg-panel); color:var(--text-primary); border-color:var(--border); }
+.leaflet-control-zoom a:hover { background:var(--bg-hover); }
+
+.cmap-side { display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0; }
+.cmap-side-head { font-size:10px; font-weight:800; letter-spacing:.1em; color:var(--text-muted);
+                  text-transform:uppercase; flex-shrink:0; }
+.cmap-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; min-height:0; }
+.cmap-empty { font-size:12px; color:var(--text-muted); font-style:italic; padding:10px 0; }
+
+.cmap-unit-row { display:flex; align-items:center; gap:9px; padding:8px 10px; cursor:pointer;
+                 border-radius:var(--radius); background:var(--bg-input); border:1px solid transparent; }
+.cmap-unit-row:hover { background:var(--bg-hover); }
+.cmap-unit-row.cmap-following { border-color:var(--accent); }
+.cmap-unit-row-main { flex:1; min-width:0; }
+.cmap-unit-row-name { font-size:12.5px; font-weight:600; color:var(--text-primary);
+                      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmap-unit-row-sub { font-size:10.5px; color:var(--text-muted); font-family:var(--font-mono); }
+.cmap-unit-row-dept { font-size:9.5px; font-weight:800; letter-spacing:.06em; flex-shrink:0; }
+
+.cmap-swatch { width:9px; height:9px; border-radius:50%; flex-shrink:0; display:inline-block; }
+.cmap-swatch-diamond { border-radius:2px; transform:rotate(45deg); }
+.cmap-legend { border-top:1px solid var(--border); padding-top:10px; flex-shrink:0;
+               display:flex; flex-direction:column; gap:5px; }
+.cmap-legend-row { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-muted); }
+.cmap-hint { font-size:10.5px; color:var(--text-muted); font-style:italic; margin-top:4px; }
+
+/* Unit marker: heading arrow + dot + name tag */
+.cmap-unit-wrap, .cmap-call-wrap { position:relative; width:0; height:0; }
+.cmap-unit-dot { position:absolute; left:-5px; top:-5px; width:10px; height:10px; border-radius:50%;
+                 border:1.5px solid rgba(255,255,255,.85); }
+.cmap-unit-arrow { position:absolute; left:-6px; top:-16px; width:0; height:0;
+                   border-left:6px solid transparent; border-right:6px solid transparent;
+                   border-bottom:9px solid currentColor; transform-origin:50% 16px; opacity:.95; }
+.cmap-unit-label { position:absolute; left:9px; top:-9px; white-space:nowrap; font-size:10px;
+                   font-weight:700; padding:1px 6px; border-radius:3px; color:#fff;
+                   background:rgba(10,13,20,.82); border:1px solid; pointer-events:none; }
+
+/* CAD call marker */
+.cmap-call-diamond { position:absolute; left:-5px; top:-5px; width:10px; height:10px;
+                     transform:rotate(45deg); border:1.5px solid rgba(255,255,255,.9); }
+.cmap-call-pulse { position:absolute; left:-9px; top:-9px; width:18px; height:18px; border-radius:50%;
+                   opacity:.35; animation:cmapPulse 1.8s ease-out infinite; }
+@keyframes cmapPulse { 0% { transform:scale(.5); opacity:.5; } 100% { transform:scale(1.6); opacity:0; } }
+.cmap-call-label { position:absolute; left:10px; top:-9px; white-space:nowrap; font-size:10px;
+                   font-weight:700; padding:1px 6px; border-radius:3px; color:#fff;
+                   background:rgba(10,13,20,.82); border:1px solid; pointer-events:none;
+                   font-family:var(--font-mono); }
+
+/* Popups */
+.cmap-popup .leaflet-popup-content-wrapper { background:var(--bg-panel); color:var(--text-primary);
+    border:1px solid var(--border-light); border-radius:var(--radius); box-shadow:0 12px 40px rgba(0,0,0,.6); }
+.cmap-popup .leaflet-popup-content { margin:10px 12px; }
+.cmap-popup .leaflet-popup-tip { background:var(--bg-panel); border:1px solid var(--border-light); }
+.cmap-pop-name { font-size:13px; font-weight:800; }
+.cmap-pop-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.cmap-pop-actions { display:flex; gap:6px; margin-top:8px; }
+.cmap-pop-actions button { flex:1; font-size:11px; font-weight:600; padding:4px 8px; cursor:pointer;
+    background:var(--bg-input); color:var(--text-primary);
+    border:1px solid var(--border); border-radius:4px; }
+.cmap-pop-actions button:hover { background:var(--bg-hover); border-color:var(--accent); }
+
+@media (max-width:1200px) { .cmap-body { grid-template-columns:1fr 210px; } }
+`;
+    document.head.appendChild(s);
+}());

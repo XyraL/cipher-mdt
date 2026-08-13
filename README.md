@@ -1,6 +1,6 @@
 <h1 align="center">Cipher MDT</h1>
 
-<p align="center">A full police MDT for <strong>QBox</strong> — live CAD dispatch, civilian records, warrants, BOLOs and supervisor audit.</p>
+<p align="center">A full MDT for <strong>QBox</strong> — Police, EMS and Fire, each with their own panels, sharing one live CAD, map and unit roster.</p>
 
 <p align="center">
   <a href="https://github.com/XyraL/cipher-mdt/releases"><img src="https://img.shields.io/github/v/release/XyraL/cipher-mdt?style=flat-square&color=70baff&label=release" alt="Latest release"></a>
@@ -22,6 +22,30 @@
 ---
 
 ## Features
+
+### Multi-department
+
+- **Three departments in one resource** — Police, EMS and Fire each get their own sidebar, panels and accent colour, resolved from the player's job
+- **Panel-level permissions** — `Config.Departments[dept].panels` is the single source of truth: the sidebar is built from it *and* every server callback re-checks it, so a panel a department doesn't have can't be reached even by hand-crafting the request
+- **Live unit blips** — Police, EMS and Fire see each other on the game map, coloured per department. Fully toggleable so you can run your own blip script instead
+- **Live map panel** — Leaflet tile map of San Andreas with department-coloured
+  unit markers, heading arrows, active CAD calls, follow-a-unit, and click-to-waypoint
+- **Department call routing** — `Config.CallRouting` decides who is alerted: medical goes to EMS, structure fires to Fire *and* EMS, crashes to all three. Panic and backup always reach everyone
+- **Data separation** — EMS and Fire see identity and medical data; criminal history, warrants and officer notes stay with Police
+
+### EMS
+
+- **Patient Care Reports** — Chief complaint, injuries, treatments, vitals (BP/pulse/SpO₂/GCS), disposition, transport destination and priority
+- **Medical Records** — Per-civilian blood type, allergies, conditions, medications, DNR and organ-donor flags, plus a dated history and prior PCRs
+- **Controlled Substance Log** — Every draw, administration and waste with a witness field, and a reconciliation view that flags discrepancies
+
+### Fire
+
+- **Fire Incident Reports** — Type, alarm level, cause, structure type, units and personnel, casualties, damage estimate, acres burned and water used
+- **Hazmat** — Substance, UN number, hazard class, containment state, evacuation radius and injuries
+- **Apparatus** — Fleet roster with status, plus an inspection log; a failed check takes the unit out of service automatically
+
+### Police
 
 - **CAD Dispatch** — Create, update, and respond to live calls with P1/P2/P3 priority, elapsed timer, unit notes, GPS routing, and call history
 - **Civilian Lookup** — Full profiles with mugshot, flags, arrest history, citations, vehicles, warrants, and officer notes
@@ -52,6 +76,7 @@
 | [ox_lib](https://github.com/overextended/ox_lib) | Yes |
 | [oxmysql](https://github.com/overextended/oxmysql) | Yes |
 | [ox_target](https://github.com/overextended/ox_target) **or** [qb-target](https://github.com/qbcore-framework/qb-target) | Optional |
+| [cipher-dispatch](https://github.com/XyraL/cipher-dispatch) *(or any adapter)* | Optional — falls back to the built-in CAD |
 
 > **Note:** qbx_core is required. Standard QBCore (`qb-core`) is not directly supported.
 
@@ -74,6 +99,11 @@ Run `sql/mdt.sql` against your database. It uses `CREATE TABLE IF NOT EXISTS` th
 
 If you are **upgrading from a previous version**, run only the commented `ALTER TABLE` lines at the top of the SQL file that match your current version.
 
+> **Upgrading to multi-department:** re-run `sql/mdt.sql`. It adds eight new
+> tables (`mdt_pcr`, `mdt_medical`, `mdt_medical_history`, `mdt_narc_log`,
+> `mdt_fire_incidents`, `mdt_hazmat`, `mdt_apparatus`, `mdt_apparatus_log`) and
+> leaves every existing table untouched.
+
 ### 3. Configure
 
 Open `config.lua` and adjust the settings for your server (see [Configuration](#configuration) below).
@@ -89,6 +119,139 @@ restart cipher-mdt
 ## Configuration
 
 All options are in `config.lua`.
+
+### Departments
+
+`Config.Departments` maps jobs to a department, and each department to the panels
+its members may open. This one table drives the sidebar, the theming and every
+permission check.
+
+```lua
+Config.Departments = {
+    police = {
+        label = 'Police Department', short = 'PD',
+        color = '#6366f1', blipColor = 3, icon = '⬡',
+        jobs  = { 'police', 'sheriff', 'swat', 'statepolice' },
+        supervisorGrade = 3,
+        panels = { 'dashboard', 'roster', 'map', 'civilians', 'vehicles',
+                   'warrants', 'bolos', 'arrests', 'citations', 'incidents',
+                   'penal', 'cad', 'callhistory', 'bulletins', 'mugshots', 'shiftlog' },
+    },
+    ems  = { jobs = { 'ambulance', 'ems' },        panels = { …, 'pcr', 'medhistory', 'narclog' } },
+    fire = { jobs = { 'fire', 'firefighter' },     panels = { …, 'fireincidents', 'hazmat', 'apparatus' } },
+}
+```
+
+Adding a job to a department is all it takes — no other file needs editing.
+Removing a panel from the list hides it in the UI **and** makes its server
+callbacks refuse to answer, so the two can never drift apart.
+
+**Available panel keys**
+
+| Group | Keys |
+|---|---|
+| Shared | `dashboard` `roster` `map` `civilians` `cad` `callhistory` `bulletins` `shiftlog` |
+| Police | `vehicles` `warrants` `bolos` `arrests` `citations` `incidents` `penal` `mugshots` |
+| EMS | `pcr` `medhistory` `narclog` |
+| Fire | `fireincidents` `hazmat` `apparatus` |
+
+Two panel keys double as data gates on the shared civilian lookup:
+
+- `warrants` — grants criminal data (warrants, arrests, citations, registered vehicles, officer notes)
+- `medhistory` — grants medical data (blood type, allergies, conditions, medications, history)
+
+By default Police has the first and EMS the second, so neither sees the other's
+records. Give Fire `medhistory` if your firefighters are cross-trained EMTs.
+
+The gate covers **actions as well as data**: the Issue Warrant / Citation / Log
+Arrest buttons only render for a department with the `warrants` panel, and every
+enforcement callback re-checks server-side — so an EMS medic can't file a warrant
+even by crafting the request by hand. Supervisor scope is per-department too
+(`supervisorGrade`), and a supervisor only ever sees their own department's
+officers.
+
+### Live unit blips
+
+Police, EMS and Fire see each other on the map, coloured per department.
+
+```lua
+Config.Blips = {
+    Enabled         = true,   -- false disables the whole system: no broadcast, no blips
+    TrackedJobs     = nil,    -- nil = every job in Config.Departments; or an explicit list
+    CrossDepartment = true,   -- false = you only see your own department
+    OnDutyOnly      = true,
+    UpdateInterval  = 2000,   -- ms between position broadcasts
+    StaleAfter      = 15,     -- seconds before a silent unit drops off
+    ShowName = true, ShowBadge = true, ShowVehicle = true,
+    JobColors = { --[[ ['swat'] = 27 ]] },  -- per-job colour override
+}
+```
+
+Set `Enabled = false` if you'd rather run your own blip script — the position
+broadcast loop never starts, so it costs nothing.
+
+### Live map
+
+The map is Leaflet over a tile pyramid of the San Andreas satellite render, not
+the game's own pause map — that one is an engine render target the NUI browser
+has no access to, so every MDT uses an image map.
+
+Everything it needs ships with the resource: `html/vendor/leaflet/` (BSD-2) and
+`html/assets/maps/tiles/`. Nothing is fetched from the internet at runtime.
+
+If the map is blank, the F8 console names the tile URL that failed — that is
+almost always the manifest not shipping `html/assets/maps/tiles/*.webp`, or the
+tiles not having reached the server.
+
+If unit dots land slightly off where they should be, calibrate `MAP.world` at the
+top of `html/js/panels/map.js`: stand somewhere recognisable in-game, note your
+coords, open the Live Map, and nudge the bounds until the dot sits on you.
+
+To use a different render, drop it in as `html/assets/maps/san-andreas-satellite.webp`
+and rebuild the tiles:
+
+```bash
+npm install sharp
+node tools/build-map-tiles.js
+```
+
+The script prints the native zoom it used — put that in `MAP.nativeZoom`, along
+with the new `imageW` / `imageH`. See `html/assets/maps/README.md`.
+
+### Call routing
+
+`Config.CallRouting` decides which departments are alerted for each call type.
+A type that isn't listed falls back to `Default`.
+
+```lua
+Config.CallRouting = {
+    Default = { 'police' },
+    Types = {
+        MEDICAL       = { 'ems' },
+        FIRE          = { 'fire', 'ems' },            -- EMS stages on every structure fire
+        VEHICLE_CRASH = { 'police', 'ems', 'fire' },  -- full response
+        SHOTS_FIRED   = { 'police' },
+        CUSTOM        = { 'police', 'ems', 'fire' },
+    },
+}
+```
+
+Panic buttons and backup requests ignore routing — every department always
+receives officer-safety alerts.
+
+### Dispatch provider selection
+
+`Config.DispatchProvider = 'auto'` is the recommended setting. Cipher MDT uses
+Cipher Dispatch when it is running, selects another registered adapter by
+priority, and falls back to its internal CAD when no external provider exists.
+The resources may start or stop in either order; provider state is reevaluated
+without a hard manifest dependency.
+
+Use `'internal'` to force built-in CAD or a registered provider ID to force a
+specific integration. External dispatch resources can register through
+`RegisterDispatchProvider`; export-only resources can be mapped in
+`Config.DispatchAdapters`. The reference implementation is documented in
+`cipher-dispatch/adapters/README.md`.
 
 ```lua
 -- Jobs allowed to access the MDT

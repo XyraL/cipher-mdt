@@ -1,3 +1,102 @@
+// Does the current player's department include this panel?
+const hasPanel = p => (MDT.panels || []).includes(p);
+
+// The dashboard is shared across departments, so its stat cards and quick
+// actions are assembled from whichever panels the player actually has.
+function statCard(cls, icon, label, id, trend) {
+    return `
+        <div class="stat-card ${cls}">
+            <div class="stat-icon">${icon}</div>
+            <div class="stat-label">${label}</div>
+            <div class="stat-value" id="${id}"><div class="skeleton skeleton-line w-1/4" style="height:30px;"></div></div>
+            <div class="stat-trend" ${id === 'stat-calls' ? 'id="stat-calls-sub"' : ''}>${trend}</div>
+        </div>`;
+}
+
+function dashStatCards() {
+    const cards = [];
+    if (hasPanel('cad')) cards.push(statCard('accent', '📻', 'Active Calls', 'stat-calls', 'Loading...'));
+
+    if (hasPanel('warrants')) cards.push(statCard('red', '⚖', 'Active Warrants', 'stat-warrants', 'Currently open'));
+    if (hasPanel('bolos'))    cards.push(statCard('yellow', '📡', 'Active BOLOs', 'stat-bolos', 'Person &amp; vehicle'));
+
+    if (hasPanel('pcr')) {
+        cards.push(statCard('green', '✚', 'PCRs Today', 'stat-pcrs', 'Reports filed'));
+        cards.push(statCard('yellow', '📋', 'Open Reports', 'stat-open-pcrs', 'Awaiting completion'));
+    }
+
+    if (hasPanel('fireincidents')) {
+        cards.push(statCard('red', '🔥', 'Incidents Today', 'stat-fires', 'Runs logged'));
+        cards.push(statCard('yellow', '☣', 'Active Hazmat', 'stat-hazmat', 'Not yet contained'));
+    }
+
+    cards.push(statCard('green', '◉', 'Units On Duty', 'stat-officers', 'Currently active'));
+    return cards.join('');
+}
+
+function dashQuickActions() {
+    const btn = (panel, cls, icon, label, fn) =>
+        hasPanel(panel)
+            ? `<button class="btn ${cls} btn-sm w-full" style="justify-content:flex-start;" onclick="${fn}">${icon} ${label}</button>`
+            : '';
+
+    return [
+        btn('civilians', 'btn-ghost', '🔍', 'Lookup Civilian', "switchTab('civilians')"),
+        btn('vehicles',  'btn-ghost', '🚗', 'Plate Lookup',    "switchTab('vehicles')"),
+        btn('map',       'btn-ghost', '🗺', 'Live Map',        "switchTab('map')"),
+        btn('cad',       'btn-ghost', '📻', 'CAD Dispatch',    "switchTab('cad')"),
+
+        btn('warrants',  'btn-ghost', '⚖', 'Warrants',  "switchTab('warrants')"),
+        btn('bolos',     'btn-ghost', '📡', 'BOLOs',     "switchTab('bolos')"),
+        btn('incidents', 'btn-ghost', '📋', 'Reports',   "switchTab('incidents')"),
+        btn('citations', 'btn-success', '📄', 'Issue Citation', 'openNewCitationModal()'),
+        btn('arrests',   'btn-danger',  '🔒', 'Log Arrest',     'openNewArrestModal()'),
+
+        btn('medhistory', 'btn-ghost',  '❤', 'Medical Records', "switchTab('medhistory')"),
+        btn('narclog',    'btn-ghost',  '💊', 'Narcotics Log',   "switchTab('narclog')"),
+        btn('pcr',        'btn-success', '✚', 'New PCR',         'openNewPCR()'),
+
+        btn('apparatus',     'btn-ghost',  '🚒', 'Apparatus',     "switchTab('apparatus')"),
+        btn('hazmat',        'btn-ghost',  '☣', 'Hazmat',        "switchTab('hazmat')"),
+        btn('fireincidents', 'btn-danger', '🔥', 'New Incident',  'openNewFireIncident()'),
+    ].filter(Boolean).join('');
+}
+
+// Fill the department-specific stat cards. Each block is skipped unless its
+// panel is present, so no callback is fired that would be refused anyway.
+function loadDashDepartmentStats() {
+    const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    };
+
+    if (hasPanel('warrants')) {
+        nuiFetch('getWarrants', { filter: 'active' }).then(d => {
+            if (d) { set('stat-warrants', d.length); updateWarrantBadge(d.length); }
+        });
+    }
+    if (hasPanel('bolos')) {
+        nuiFetch('getBolos').then(d => {
+            if (d) { set('stat-bolos', d.length); MDT.activeBolos = d; updateBoloBadge(); }
+        });
+    }
+    if (hasPanel('pcr')) {
+        nuiFetch('getEMSStats').then(d => {
+            if (!d) return;
+            set('stat-pcrs', d.pcrs_today);
+            set('stat-open-pcrs', d.open_pcrs);
+        });
+    }
+    if (hasPanel('fireincidents')) {
+        nuiFetch('getFireStats').then(d => {
+            if (!d) return;
+            set('stat-fires', d.incidents_today);
+            set('stat-hazmat', d.active_hazmat);
+            updateHazmatBadge(d.active_hazmat);
+        });
+    }
+}
+
 function renderDashboard() {
     const panel = document.getElementById('tab-dashboard');
     panel.innerHTML = `
@@ -15,33 +114,10 @@ function renderDashboard() {
         </div>
         <div class="panel-body">
             <div class="stat-grid" id="dash-stats">
-                <div class="stat-card accent">
-                    <div class="stat-icon">📻</div>
-                    <div class="stat-label">Active Calls</div>
-                    <div class="stat-value" id="stat-calls"><div class="skeleton skeleton-line w-1/4" style="height:30px;"></div></div>
-                    <div class="stat-trend" id="stat-calls-sub">Loading...</div>
-                </div>
-                <div class="stat-card red">
-                    <div class="stat-icon">⚖</div>
-                    <div class="stat-label">Active Warrants</div>
-                    <div class="stat-value" id="stat-warrants"><div class="skeleton skeleton-line w-1/4" style="height:30px;"></div></div>
-                    <div class="stat-trend">Issued today</div>
-                </div>
-                <div class="stat-card yellow">
-                    <div class="stat-icon">📡</div>
-                    <div class="stat-label">Active BOLOs</div>
-                    <div class="stat-value" id="stat-bolos"><div class="skeleton skeleton-line w-1/4" style="height:30px;"></div></div>
-                    <div class="stat-trend">Person &amp; vehicle</div>
-                </div>
-                <div class="stat-card green">
-                    <div class="stat-icon">👮</div>
-                    <div class="stat-label">Officers On Duty</div>
-                    <div class="stat-value" id="stat-officers"><div class="skeleton skeleton-line w-1/4" style="height:30px;"></div></div>
-                    <div class="stat-trend">Currently active</div>
-                </div>
+                ${dashStatCards()}
             </div>
 
-            ${MDT.officer && MDT.officer.isSupervisor ? `
+            ${MDT.officer && MDT.officer.isSupervisor && hasPanel('arrests') ? `
             <div class="card" id="dash-sup-stats" style="margin-bottom:16px;">
                 <div class="card-header">
                     <div class="card-title">
@@ -75,14 +151,7 @@ function renderDashboard() {
                             </div>
                         </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('civilians')">🔍 Lookup Civilian</button>
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('vehicles')">🚗 Plate Lookup</button>
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('warrants')">⚖ Warrants</button>
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('bolos')">📡 BOLOs</button>
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('cad')">📻 CAD Dispatch</button>
-                            <button class="btn btn-ghost btn-sm w-full" style="justify-content:flex-start;" onclick="switchTab('incidents')">📋 Reports</button>
-                            <button class="btn btn-success btn-sm w-full" style="justify-content:flex-start;" onclick="openNewCitationModal()">📄 Issue Citation</button>
-                            <button class="btn btn-danger btn-sm w-full" style="justify-content:flex-start;" onclick="openNewArrestModal()">🔒 Log Arrest</button>
+                            ${dashQuickActions()}
                         </div>
                     </div>
                 </div>
@@ -131,7 +200,7 @@ function renderDashboard() {
                         <span class="call-number">${c.call_number}</span>
                         <span class="tag tag-${statusColor(c.status)}" style="margin-left:auto;">${c.status.toUpperCase()}</span>
                     </div>
-                    <div class="call-type">${c.type}</div>
+                    <div class="call-type">${c.call_type || c.type}</div>
                     <div class="call-location">📍 ${c.location}</div>
                     <div class="call-units">
                         ${(c.units||[]).map(u=>`<span class="call-unit-chip">${u.name.split(' ')[0]}</span>`).join('')}
@@ -141,13 +210,7 @@ function renderDashboard() {
         }
     });
 
-    nuiFetch('getWarrants', { filter: 'active' }).then(d => {
-        if (d) { document.getElementById('stat-warrants').textContent = d.length; updateWarrantBadge(d.length); }
-    });
-
-    nuiFetch('getBolos').then(d => {
-        if (d) { document.getElementById('stat-bolos').textContent = d.length; MDT.activeBolos = d; updateBoloBadge(); }
-    });
+    loadDashDepartmentStats();
 
     nuiFetch('getMyOfficerProfile').then(profile => {
         if (!profile) return;
@@ -182,8 +245,8 @@ function renderDashboard() {
         if (roster) document.getElementById('stat-officers').textContent = roster.length;
     });
 
-    // Supervisor stats
-    if (MDT.officer && MDT.officer.isSupervisor) {
+    // Supervisor stats — the arrest/citation breakdown only means something for police.
+    if (MDT.officer && MDT.officer.isSupervisor && hasPanel('arrests')) {
         nuiFetch('getDepartmentStats').then(stats => {
             const el = document.getElementById('sup-stats-body');
             if (!el || !stats) return;
@@ -222,8 +285,11 @@ function renderDashboard() {
         });
     }
 
-    // Department activity feed — merge recent arrests + citations
-    Promise.all([
+    // Department activity feed — merge recent arrests + citations (police only)
+    if (!hasPanel('arrests')) {
+        const feedEl = document.getElementById('dash-activity-feed');
+        if (feedEl) feedEl.innerHTML = '<div class="text-xs text-muted">No activity feed for this department.</div>';
+    } else Promise.all([
         nuiFetch('getRecentArrests'),
         nuiFetch('getRecentCitations'),
     ]).then(([arrests, citations]) => {

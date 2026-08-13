@@ -83,7 +83,7 @@ end
 lib.callback.register('cipher-mdt:server:getAuditLog', function(source, data)
     if not IsAuthorized(source) then return nil end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Config.SupervisorGrade then return nil end
+    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return nil end
 
     data = data or {}
     local where, params = {}, {}
@@ -125,6 +125,8 @@ lib.callback.register('cipher-mdt:server:searchPlayersByName', function(source, 
     if not IsAuthorized(source) then return nil end
     if not query or #query < 2 then return {} end
     local search = query:lower()
+    -- Warrant counts are criminal data — police only.
+    local showWarrants = HasPanel(source, 'warrants')
     local results = {}
     local players = exports['qbx_core']:GetQBPlayers()
     for src, player in pairs(players) do
@@ -140,8 +142,8 @@ lib.callback.register('cipher-mdt:server:searchPlayersByName', function(source, 
             ]], { pd.citizenid, pd.charinfo.firstname, pd.charinfo.lastname,
                   pd.charinfo.birthdate, pd.charinfo.gender, pd.charinfo.phone })
 
-            local warrantCount = MySQL.scalar.await(
-                "SELECT COUNT(*) FROM mdt_warrants WHERE citizenid=? AND status='active'", { pd.citizenid }) or 0
+            local warrantCount = showWarrants and (MySQL.scalar.await(
+                "SELECT COUNT(*) FROM mdt_warrants WHERE citizenid=? AND status='active'", { pd.citizenid }) or 0) or nil
 
             results[#results+1] = {
                 citizenid  = pd.citizenid,
@@ -158,12 +160,15 @@ lib.callback.register('cipher-mdt:server:searchPlayersByName', function(source, 
         end
     end
     -- Also search offline civilians
-    local dbResults = MySQL.query.await([[
-        SELECT c.*, (SELECT COUNT(*) FROM mdt_warrants w WHERE w.citizenid=c.citizenid AND w.status='active') as warrants
+    local dbResults = MySQL.query.await(([[
+        SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.gender, c.phone%s
         FROM mdt_civilians c
         WHERE CONCAT(c.firstname,' ',c.lastname) LIKE ?
         LIMIT 12
-    ]], { '%'..query..'%' })
+    ]]):format(showWarrants
+        and [[, (SELECT COUNT(*) FROM mdt_warrants w WHERE w.citizenid=c.citizenid AND w.status='active') as warrants]]
+        or ''),
+    { '%'..query..'%' })
     for _, row in ipairs(dbResults) do
         local already = false
         for _, r in ipairs(results) do if r.citizenid == row.citizenid then already = true break end end
@@ -177,7 +182,7 @@ lib.callback.register('cipher-mdt:server:searchPlayersByName', function(source, 
                 gender    = row.gender,
                 phone     = row.phone,
                 online    = false,
-                warrants  = row.warrants or 0,
+                warrants  = showWarrants and (row.warrants or 0) or nil,
             }
         end
     end
