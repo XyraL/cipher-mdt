@@ -1,7 +1,14 @@
 # Announces a published release to Discord.
 #
-# The formatting lives in XyraL/xyral-bot so every script announces the same
-# way and there is only one file to change.
+# This used to call a reusable workflow in XyraL/xyral-bot, and it silently
+# never ran: xyral-bot is private, and a public repository cannot call a
+# reusable workflow from a private one. The run fails before any job exists, so
+# there are no step logs to read — only "this run likely failed because of a
+# workflow file issue", which does not say that.
+#
+# Carrying a copy per repo costs little here. The part that actually changes is
+# the embed format, and that lives in the bot Worker (src/announce.js); this
+# file only forwards the release fields to it.
 name: Announce
 
 on:
@@ -10,5 +17,40 @@ on:
 
 jobs:
   announce:
-    uses: XyraL/xyral-bot/.github/workflows/announce-release.yml@master
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          ANNOUNCE_URL: ${{ secrets.ANNOUNCE_URL }}
+          ANNOUNCE_SECRET: ${{ secrets.ANNOUNCE_SECRET }}
+          # Release fields go through the environment rather than being
+          # interpolated into the script: a body containing a quote or a
+          # backtick would otherwise break the shell, and release notes are
+          # full of both.
+          REPO_NAME: ${{ github.event.repository.name }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          BODY: ${{ github.event.release.body }}
+          URL: ${{ github.event.release.html_url }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          payload=$(jq -n \
+            --arg repo "$REPO_NAME" \
+            --arg tag "$TAG" \
+            --arg name "$NAME" \
+            --arg body "$BODY" \
+            --arg url "$URL" \
+            --argjson prerelease "$PRERELEASE" \
+            '{repo:$repo, tag:$tag, name:$name, body:$body, url:$url, prerelease:$prerelease}')
+
+          code=$(printf '%s' "$payload" | curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -X POST "$ANNOUNCE_URL" \
+            -H 'Content-Type: application/json' \
+            -H "x-announce-secret: $ANNOUNCE_SECRET" \
+            --data-binary @-)
+
+          echo "HTTP $code"
+          cat /tmp/out.txt
+          # Fail loudly: a silent announcement failure means nobody hears about
+          # a release and nobody finds out why.
+          [ "$code" = "200" ]
