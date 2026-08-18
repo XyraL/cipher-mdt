@@ -37,7 +37,7 @@ function qdRender() {
                 <span class="qd-icon">${c.icon || '📡'}</span>
                 <div class="qd-row-info">
                     <div class="qd-row-type">${c.call_type || 'Call'}</div>
-                    <div class="qd-row-loc">${c.location || 'Unknown'}</div>
+                    <div class="qd-row-loc">${esc(c.location || 'Unknown')}</div>
                 </div>
             </div>
             <div class="qd-row-right">
@@ -50,7 +50,7 @@ function qdRender() {
     const sel = QD.calls[QD.selected];
     if (sel) {
         document.getElementById('qd-selected-info').textContent =
-            `${sel.description || ''} — Caller: ${sel.caller_name || 'Unknown'}`;
+            `${esc(sel.description || '')} — Caller: ${sel.caller_name || 'Unknown'}`;
     }
 }
 

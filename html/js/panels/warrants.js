@@ -132,7 +132,7 @@ function openIssueWarrantModal(prefillPerson = null) {
                 citizenid: _warrantPerson.citizenid, charges, description: desc, expiryDays
             });
             if (result) {
-                showToast('Warrant Issued', `Warrant #${result} on ${_warrantPerson.name} — all units notified.`, 'success');
+                showToast('Warrant Issued', `Warrant #${result} on ${esc(_warrantPerson.name)} — all units notified.`, 'success');
                 closeModal(modal);
                 loadWarrants();
             } else {

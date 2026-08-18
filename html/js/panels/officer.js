@@ -201,7 +201,7 @@ function renderDashboard() {
                         <span class="tag tag-${statusColor(c.status)}" style="margin-left:auto;">${c.status.toUpperCase()}</span>
                     </div>
                     <div class="call-type">${c.call_type || c.type}</div>
-                    <div class="call-location">📍 ${c.location}</div>
+                    <div class="call-location">📍 ${esc(c.location)}</div>
                     <div class="call-units">
                         ${(c.units||[]).map(u=>`<span class="call-unit-chip">${u.name.split(' ')[0]}</span>`).join('')}
                         ${(!c.units||c.units.length===0)?'<span class="text-xs text-muted">No units assigned</span>':''}
@@ -276,7 +276,7 @@ function renderDashboard() {
                 ${stats.top_officers.map((o, i) => `
                     <div class="top-officer-row">
                         <div class="top-officer-rank ${rankClass(i)}">${i + 1}</div>
-                        <div style="flex:1;font-size:12.5px;font-weight:600;">${o.officer_name}</div>
+                        <div style="flex:1;font-size:12.5px;font-weight:600;">${esc(o.officer_name)}</div>
                         <div style="font-size:11px;color:var(--text-muted);">${o.arrest_count} arrest${o.arrest_count !== 1 ? 's' : ''}</div>
                         <div style="width:80px;background:var(--bg-base);border-radius:4px;height:5px;overflow:hidden;margin-left:8px;">
                             <div style="background:var(--accent);height:100%;width:${Math.min(100, Math.round(o.arrest_count / stats.top_officers[0].arrest_count * 100))}%;border-radius:4px;"></div>
@@ -315,7 +315,7 @@ function renderDashboard() {
             <div class="activity-item">
                 <div class="activity-icon" style="background:${i.iconBg};">${i.icon}</div>
                 <div class="activity-meta">
-                    <div class="activity-title">${i.title}</div>
+                    <div class="activity-title">${esc(i.title)}</div>
                     <div class="activity-sub">${i.sub}</div>
                 </div>
                 <div class="activity-time">${timeAgo(i.ts)}</div>
@@ -355,7 +355,7 @@ function loadRoster() {
                 <div class="roster-card-header">
                     <div class="roster-avatar">👮</div>
                     <div style="flex:1;min-width:0;">
-                        <div class="roster-name">${o.name}</div>
+                        <div class="roster-name">${esc(o.name)}</div>
                         <div class="roster-meta">${o.grade}</div>
                     </div>
                 </div>
@@ -375,7 +375,7 @@ function loadRoster() {
                         font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;
                         background:${statusCfg.color}22;color:${statusCfg.color};
                         border:1px solid ${statusCfg.color}55;">
-                        ${statusCfg.code} — ${statusCfg.label}
+                        ${statusCfg.code} — ${esc(statusCfg.label)}
                     </span>
                     ${MDT.officer && MDT.officer.isSupervisor
                         ? `<button class="btn btn-ghost btn-xs ml-auto" onclick="openBodyCamLog('${o.citizenid}')">📹</button>`
@@ -466,7 +466,7 @@ async function openBodyCamLog(targetCitizenid) {
                             <td class="font-mono text-xs text-muted" style="white-space:nowrap;">${fmtDate(e.created_at)}</td>
                             <td style="white-space:nowrap;">
                                 <span style="color:${cfg.color};font-weight:700;font-size:12px;">
-                                    ${cfg.icon} ${cfg.label}
+                                    ${cfg.icon} ${esc(cfg.label)}
                                 </span>
                             </td>
                             <td class="text-sm text-secondary">${e.details || '—'}</td>
@@ -536,7 +536,7 @@ async function runAuditSearch() {
                         <td style="white-space:nowrap;font-weight:700;font-size:12px;">
                             ${AUDIT_ICONS[e.action] || '•'} ${e.action}
                         </td>
-                        <td class="text-sm font-bold">${e.officer_name}</td>
+                        <td class="text-sm font-bold">${esc(e.officer_name)}</td>
                         <td class="text-sm text-secondary">${e.details || '—'}</td>
                     </tr>`).join('')}
                 </tbody>

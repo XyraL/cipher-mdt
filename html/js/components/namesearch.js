@@ -79,7 +79,7 @@ class NameSearch {
         this._dropdown.innerHTML = this.results.map((p, i) => `
             <div class="ns-item ${this.focusIndex === i ? 'ns-item-focused' : ''}" data-idx="${i}">
                 <div class="ns-item-left">
-                    <div class="ns-item-name">${p.name}</div>
+                    <div class="ns-item-name">${esc(p.name)}</div>
                     <div class="ns-item-meta">DOB ${p.dob || '—'} · ${p.gender === 'male' || p.gender === 'm' ? '♂' : '♀'}</div>
                 </div>
                 <div class="ns-item-right">
@@ -139,7 +139,7 @@ class NameSearch {
             <div class="ns-selected-card">
                 <div class="ns-selected-avatar">${person.name.charAt(0).toUpperCase()}</div>
                 <div class="ns-selected-info">
-                    <div class="ns-selected-name">${person.name}</div>
+                    <div class="ns-selected-name">${esc(person.name)}</div>
                     <div class="ns-selected-meta">DOB ${person.dob || '—'} · ${person.citizenid}</div>
                 </div>
                 ${warnHtml}

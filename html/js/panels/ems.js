@@ -90,8 +90,8 @@ function pcrCard(r) {
              onclick="openPCR(${r.id})">
             <div class="card-header" style="margin-bottom:8px;">
                 <div style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;">
-                    <span class="tag ${pri.tag}">${pri.label}</span>
-                    <span class="font-bold" style="font-size:14px;">${r.patient_name}</span>
+                    <span class="tag ${esc(pri.tag)}">${esc(pri.label)}</span>
+                    <span class="font-bold" style="font-size:14px;">${esc(r.patient_name)}</span>
                     ${r.status === 'open' ? '<span class="tag tag-yellow">OPEN</span>' : ''}
                     <span class="text-xs text-muted font-mono">${timeAgo(r.created_at)}</span>
                 </div>
@@ -114,7 +114,7 @@ function pcrFormHTML(r = {}) {
             <label class="form-label">Patient</label>
             <div id="pcr-patient-search"></div>
             <input type="hidden" id="pcr-cid" value="${r.patient_citizenid || ''}">
-            <input type="hidden" id="pcr-pname" value="${r.patient_name || ''}">
+            <input type="hidden" id="pcr-pname" value="${esc(r.patient_name || '')}">
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -161,7 +161,7 @@ function pcrFormHTML(r = {}) {
             <div class="form-group">
                 <label class="form-label">Disposition</label>
                 <select class="input" id="pcr-disposition">
-                    ${PCR_DISPOSITIONS.map(d => `<option value="${d.value}" ${r.disposition === d.value ? 'selected' : ''}>${d.label}</option>`).join('')}
+                    ${PCR_DISPOSITIONS.map(d => `<option value="${d.value}" ${r.disposition === d.value ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}
                 </select>
             </div>
             <div class="form-group">
@@ -180,7 +180,7 @@ function pcrFormHTML(r = {}) {
         <div class="form-group">
             <label class="form-label">Narrative</label>
             <textarea class="input" id="pcr-narrative" rows="5"
-                      placeholder="Arrived on scene to find...">${r.narrative || ''}</textarea>
+                      placeholder="Arrived on scene to find...">${esc(r.narrative || '')}</textarea>
         </div>`;
 }
 
@@ -223,7 +223,7 @@ async function openPCR(id) {
     const r = await nuiFetch('getPCR', id);
     if (!r) return showToast('Error', 'Report not found.', 'error');
 
-    createModal(`PCR #${r.id} — ${r.patient_name}`, pcrFormHTML(r), async () => {
+    createModal(`PCR #${r.id} — ${esc(r.patient_name)}`, pcrFormHTML(r), async () => {
         const data = readPCRForm();
         data.id = r.id;
         const ok = await nuiFetch('updatePCR', data);
@@ -280,7 +280,7 @@ function loadMedicalRecords() {
             }
             body.innerHTML = results.map(c => `
                 <div class="card mb-2" style="cursor:pointer;" onclick="openMedicalRecord('${c.citizenid}')">
-                    <div class="font-bold">${c.firstname} ${c.lastname}</div>
+                    <div class="font-bold">${esc(c.firstname)} ${esc(c.lastname)}</div>
                     <div class="text-xs text-muted font-mono">DOB ${c.dob || '—'} · ${c.citizenid}</div>
                 </div>`).join('');
         }, 300);
@@ -298,7 +298,7 @@ async function openMedicalRecord(citizenid) {
     body.innerHTML = `
         <div class="card mb-2">
             <div class="card-header">
-                <div class="card-title">${civ.firstname} ${civ.lastname}</div>
+                <div class="card-title">${esc(civ.firstname)} ${esc(civ.lastname)}</div>
                 <button class="btn btn-primary btn-sm" onclick="editMedicalRecord('${citizenid}')">Edit Record</button>
             </div>
             <div class="text-xs text-muted font-mono mb-2">
@@ -313,7 +313,7 @@ async function openMedicalRecord(citizenid) {
             ${medListBlock('Conditions', rec.conditions, 'tag-orange')}
             ${medListBlock('Medications', rec.medications, 'tag-blue')}
             ${rec.notes ? `<div class="mt-2"><div class="form-label">Notes</div>
-                <div style="font-size:12.5px;color:var(--text-secondary);">${rec.notes}</div></div>` : ''}
+                <div style="font-size:12.5px;color:var(--text-secondary);">${esc(rec.notes)}</div></div>` : ''}
         </div>
 
         <div class="card mb-2">
@@ -400,7 +400,7 @@ async function editMedicalRecord(citizenid) {
         </div>
         <div class="form-group">
             <label class="form-label">Notes</label>
-            <textarea class="input" id="med-notes" rows="3">${r.notes || ''}</textarea>
+            <textarea class="input" id="med-notes" rows="3">${esc(r.notes || '')}</textarea>
         </div>`, async () => {
         const val = id => (document.getElementById(id) || {}).value || '';
         const ok = await nuiFetch('updateMedicalRecord', {
@@ -521,11 +521,11 @@ function loadNarcLog(filter) {
                         <span class="text-xs text-muted font-mono">${timeAgo(e.created_at)}</span>
                     </div>
                     <div style="font-size:11px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">
-                        ${e.patient_name ? `<span>Patient: <strong class="text-secondary">${e.patient_name}</strong></span>` : ''}
+                        ${e.patient_name ? `<span>Patient: <strong class="text-secondary">${esc(e.patient_name)}</strong></span>` : ''}
                         <span>Medic: <strong class="text-secondary">${e.medic_name}</strong></span>
                         ${e.witness_name ? `<span>Witness: <strong class="text-secondary">${e.witness_name}</strong></span>` : '<span class="tag tag-yellow">NO WITNESS</span>'}
                     </div>
-                    ${e.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:5px;">${e.notes}</div>` : ''}
+                    ${e.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:5px;">${esc(e.notes)}</div>` : ''}
                 </div>`).join('')}`;
     });
 }

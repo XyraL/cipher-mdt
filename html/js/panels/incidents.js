@@ -36,11 +36,11 @@ function loadIncidents(filter = 'all') {
                 <div class="card-header">
                     <div class="card-title">
                         <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📋</div>
-                        <span class="font-bold">${i.title}</span>
-                        ${sev ? `<span class="tag ${sev.tag}" style="margin-left:8px;">${sev.label}</span>` : ''}
+                        <span class="font-bold">${esc(i.title)}</span>
+                        ${sev ? `<span class="tag ${esc(sev.tag)}" style="margin-left:8px;">${esc(sev.label)}</span>` : ''}
                     </div>
                     <div style="font-size:11px;color:var(--text-muted);">
-                        #${i.id} · By ${i.created_by_name} · ${timeAgo(i.created_at)}
+                        #${i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}
                     </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-muted);">
@@ -93,10 +93,10 @@ async function openIncidentDetail(id) {
         <div class="card" style="margin-bottom:14px;">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;">
                 <div>
-                    <div style="font-size:20px;font-weight:800;margin-bottom:4px;">${incident.title}</div>
+                    <div style="font-size:20px;font-weight:800;margin-bottom:4px;">${esc(incident.title)}</div>
                     <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--text-muted);">
                         <span class="font-mono">Report #${incident.id}</span>
-                        <span>By: <strong style="color:var(--text-secondary);">${incident.created_by_name}</strong></span>
+                        <span>By: <strong style="color:var(--text-secondary);">${esc(incident.created_by_name)}</strong></span>
                         <span>${fmtDate(incident.created_at)}</span>
                         ${incident.updated_at !== incident.created_at ? `<span style="color:var(--accent-2);">Updated ${timeAgo(incident.updated_at)}</span>` : ''}
                         ${canEdit ? `<span style="cursor:pointer;color:var(--accent-2)" onclick="openCaseNumberModal(${incident.id},'${(incident.case_number||'').replace(/'/g,"\\'")}')" title="Set Case Number">
@@ -104,10 +104,10 @@ async function openIncidentDetail(id) {
                         </span>` : (incident.case_number ? `<span style="color:var(--accent-2)">Case: ${incident.case_number}</span>` : '')}
                     </div>
                 </div>
-                ${sev ? `<span class="tag ${sev.tag}" style="font-size:12px;padding:5px 12px;flex-shrink:0;">${sev.label}</span>` : ''}
+                ${sev ? `<span class="tag ${esc(sev.tag)}" style="font-size:12px;padding:5px 12px;flex-shrink:0;">${esc(sev.label)}</span>` : ''}
             </div>
             <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">Narrative</div>
-            <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text-secondary);">${incident.narrative}</div>
+            <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text-secondary);">${esc(incident.narrative)}</div>
             ${renderRecordTags('incident', incident.id, incident.tags)}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
@@ -117,7 +117,7 @@ async function openIncidentDetail(id) {
                     incident.involved_civilians.map(c => `
                         <div style="padding:7px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
                             <div>
-                                <div style="font-weight:600;font-size:13px;">${c.name} ${copyBtn(c.citizenid)}</div>
+                                <div style="font-weight:600;font-size:13px;">${esc(c.name)} ${copyBtn(c.citizenid)}</div>
                                 <div class="text-muted text-sm font-mono">${c.citizenid}</div>
                             </div>
                             <button class="btn btn-ghost btn-sm" onclick="switchTab('civilians');setTimeout(()=>openCivilianProfile('${c.citizenid}'),80);">View Profile</button>
@@ -128,7 +128,7 @@ async function openIncidentDetail(id) {
                 ${incident.involved_officers.length === 0 ? '<div class="text-muted text-sm">None listed</div>' :
                     incident.involved_officers.map(o => `
                         <div style="padding:7px 0;border-bottom:1px solid var(--border);">
-                            <div style="font-weight:600;font-size:13px;">${o.name}</div>
+                            <div style="font-weight:600;font-size:13px;">${esc(o.name)}</div>
                             <div class="text-muted text-sm font-mono">${o.citizenid}</div>
                         </div>`).join('')}
             </div>
@@ -154,7 +154,7 @@ async function openIncidentDetail(id) {
                         <span class="tag tag-red">Arrest #${a.id}</span>
                         <div style="flex:1;">
                             <span style="font-size:12px;font-weight:600;">${a.citizenid}</span>
-                            <span class="text-muted text-sm"> · By ${a.officer_name} · ${fmtDateShort(a.created_at)}</span>
+                            <span class="text-muted text-sm"> · By ${esc(a.officer_name)} · ${fmtDateShort(a.created_at)}</span>
                         </div>
                         <span class="text-muted text-sm">${(a.charges||[]).length} charge(s)${a.fine ? ' · ' + dollarFmt(a.fine) : ''}</span>
                     </div>`;
@@ -164,7 +164,7 @@ async function openIncidentDetail(id) {
                         <span class="tag tag-yellow">Citation #${c.id}</span>
                         <div style="flex:1;">
                             <span style="font-size:12px;font-weight:600;">${c.citizenid}</span>
-                            <span class="text-muted text-sm"> · By ${c.officer_name} · ${fmtDateShort(c.created_at)}</span>
+                            <span class="text-muted text-sm"> · By ${esc(c.officer_name)} · ${fmtDateShort(c.created_at)}</span>
                         </div>
                         <span style="font-size:12px;color:var(--green);">${dollarFmt(c.fine)}</span>
                     </div>`;
@@ -212,8 +212,8 @@ function createRecordLinker(containerId, type) {
                 dropdown.innerHTML = results.slice(0, 8).map(r => `
                     <div class="person-linker-result" onclick="linkRecord('${containerId}',${r.id},'${(r.civilian_name || r.citizenid).replace(/'/g,"\\'")}','${type}')">
                         <div>
-                            <div class="person-linker-result-name">${r.civilian_name || r.citizenid}</div>
-                            <div class="person-linker-result-meta">#${r.id} · ${fmtDateShort(r.created_at)} · By ${r.officer_name}</div>
+                            <div class="person-linker-result-name">${esc(r.civilian_name || r.citizenid)}</div>
+                            <div class="person-linker-result-meta">#${r.id} · ${fmtDateShort(r.created_at)} · By ${esc(r.officer_name)}</div>
                         </div>
                         <span class="tag ${type === 'arrest' ? 'tag-red' : 'tag-yellow'}">${type === 'arrest' ? 'Arrest' : 'Citation'}</span>
                     </div>`).join('');
@@ -257,7 +257,7 @@ function refreshLinkedRecordsDisplay(containerId, type) {
     const color = type === 'arrest' ? '' : 'officer-tag';
     el.innerHTML = list.map(r => `
         <span class="linked-person-tag ${color}">
-            #${r.id} — ${r.label}
+            #${r.id} — ${esc(r.label)}
             <button onclick="unlinkRecord('${containerId}',${r.id},'${type}')">×</button>
         </span>`).join('');
 }
@@ -352,7 +352,7 @@ function refreshLinkedDisplay(containerId, type) {
     }
     el.innerHTML = list.map(p => `
         <span class="linked-person-tag ${type === 'officer' ? 'officer-tag' : ''}">
-            ${p.name}
+            ${esc(p.name)}
             <button onclick="unlinkPerson('${containerId}','${p.citizenid}','${type}')">×</button>
         </span>`).join('');
 }
@@ -376,22 +376,22 @@ function printIncidentReport(id) {
             td { padding: 8px; border-bottom: 1px solid #eee; font-size: 10.5pt; }
             .badge { display: inline-block; border: 1px solid #999; border-radius: 4px; padding: 2px 8px; font-size: 9pt; font-weight: 700; }
         </style></head><body>
-        <h1>${incident.title}</h1>
+        <h1>${esc(incident.title)}</h1>
         <div class="meta">
-            Report #${incident.id} &nbsp;|&nbsp; By: ${incident.created_by_name} &nbsp;|&nbsp; ${new Date(incident.created_at).toLocaleString()}
-            ${sev ? ` &nbsp;|&nbsp; <span class="badge">${sev.label}</span>` : ''}
+            Report #${incident.id} &nbsp;|&nbsp; By: ${esc(incident.created_by_name)} &nbsp;|&nbsp; ${new Date(incident.created_at).toLocaleString()}
+            ${sev ? ` &nbsp;|&nbsp; <span class="badge">${esc(sev.label)}</span>` : ''}
         </div>
         <div class="label">Narrative</div>
-        <div class="narrative">${incident.narrative}</div>
+        <div class="narrative">${esc(incident.narrative)}</div>
         ${incident.involved_civilians.length ? `
         <div class="label">Involved Civilians</div>
         <table><thead><tr><th>Name</th><th>Citizen ID</th></tr></thead><tbody>
-            ${incident.involved_civilians.map(c => `<tr><td>${c.name}</td><td>${c.citizenid}</td></tr>`).join('')}
+            ${incident.involved_civilians.map(c => `<tr><td>${esc(c.name)}</td><td>${c.citizenid}</td></tr>`).join('')}
         </tbody></table>` : ''}
         ${incident.involved_officers.length ? `
         <div class="label">Involved Officers</div>
         <table><thead><tr><th>Name</th><th>Citizen ID</th></tr></thead><tbody>
-            ${incident.involved_officers.map(o => `<tr><td>${o.name}</td><td>${o.citizenid}</td></tr>`).join('')}
+            ${incident.involved_officers.map(o => `<tr><td>${esc(o.name)}</td><td>${o.citizenid}</td></tr>`).join('')}
         </tbody></table>` : ''}
         <div style="margin-top:40px;font-size:9pt;color:#888;border-top:1px solid #ddd;padding-top:12px;">
             Generated by CipherMDT — ${new Date().toLocaleString()}
@@ -504,7 +504,7 @@ function openEditIncidentModal(id) {
             </div>
             <div class="form-group">
                 <label class="form-label">Narrative</label>
-                <textarea class="textarea" id="inc-edit-narrative" style="min-height:260px;">${incident.narrative}</textarea>
+                <textarea class="textarea" id="inc-edit-narrative" style="min-height:260px;">${esc(incident.narrative)}</textarea>
             </div>
             <div class="form-row">
                 <div class="form-group" style="flex:1;">
@@ -628,8 +628,8 @@ async function viewLinkedIncidents(caseNumber) {
     }
     el.innerHTML = incidents.map(function(i) {
         return `<div class="card mb-2" onclick="openIncidentDetail(${i.id})" style="cursor:pointer;padding:12px 16px">
-            <div style="font-size:14px;font-weight:600;margin-bottom:4px">${i.title}</div>
-            <div style="font-size:12px;color:var(--text-muted)">Report #${i.id} · By ${i.created_by_name} · ${timeAgo(i.created_at)}</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(i.title)}</div>
+            <div style="font-size:12px;color:var(--text-muted)">Report #${i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}</div>
         </div>`;
     }).join('');
 }

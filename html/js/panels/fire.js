@@ -97,13 +97,13 @@ function fireIncidentCard(r) {
                 <span class="text-xs text-muted font-mono">#${r.id}</span>
             </div>
             <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:5px;">
-                📍 ${r.address}
+                📍 ${esc(r.address)}
             </div>
             <div style="font-size:11px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">
                 <span>Cause: <strong class="text-secondary">${r.cause}</strong></span>
                 ${Number(r.damage_estimate) ? `<span>Loss: <strong class="text-secondary">${money(r.damage_estimate)}</strong></span>` : ''}
                 ${(r.units_responded || []).length ? `<span>${r.units_responded.length} unit(s)</span>` : ''}
-                <span>By: <strong class="text-secondary">${r.created_by_name}</strong></span>
+                <span>By: <strong class="text-secondary">${esc(r.created_by_name)}</strong></span>
             </div>
         </div>`;
 }
@@ -134,7 +134,7 @@ function fireFormHTML(r = {}) {
         </div>
         <div class="form-group">
             <label class="form-label">Address</label>
-            <input type="text" class="input" id="fi-address" value="${r.address || ''}" placeholder="e.g. 12 Grove Street">
+            <input type="text" class="input" id="fi-address" value="${esc(r.address || '')}" placeholder="e.g. 12 Grove Street">
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -182,7 +182,7 @@ function fireFormHTML(r = {}) {
         <div class="form-group">
             <label class="form-label">Narrative</label>
             <textarea class="input" id="fi-narrative" rows="5"
-                      placeholder="On arrival, heavy smoke showing from...">${r.narrative || ''}</textarea>
+                      placeholder="On arrival, heavy smoke showing from...">${esc(r.narrative || '')}</textarea>
         </div>`;
 }
 
@@ -288,15 +288,15 @@ function loadHazmat(filter) {
                         ? `<button class="btn btn-success btn-xs" onclick="closeHazmat(${h.id})">Mark Contained</button>`
                         : ''}
                 </div>
-                <div style="font-size:13px;color:var(--text-primary);margin-bottom:5px;">📍 ${h.location}</div>
+                <div style="font-size:13px;color:var(--text-primary);margin-bottom:5px;">📍 ${esc(h.location)}</div>
                 <div style="font-size:11px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">
                     ${h.quantity ? `<span>Qty: <strong class="text-secondary">${h.quantity}</strong></span>` : ''}
                     <span>Containment: <strong class="text-secondary">${h.containment}</strong></span>
                     ${Number(h.evacuation_radius) ? `<span>Evac: <strong class="text-secondary">${h.evacuation_radius}m</strong></span>` : ''}
                     ${Number(h.injuries) ? `<span class="tag tag-red">${h.injuries} injured</span>` : ''}
-                    <span>${h.created_by_name}</span>
+                    <span>${esc(h.created_by_name)}</span>
                 </div>
-                ${h.narrative ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">${h.narrative}</div>` : ''}
+                ${h.narrative ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">${esc(h.narrative)}</div>` : ''}
             </div>`).join('');
     });
 }
@@ -427,7 +427,7 @@ function loadApparatus() {
                         <div style="display:flex;gap:8px;align-items:center;flex:1;flex-wrap:wrap;">
                             <span class="font-bold" style="font-size:15px;">🚒 ${a.unit_id}</span>
                             <span class="tag tag-gray">${a.type}</span>
-                            <span class="tag ${st.tag}">${st.label}</span>
+                            <span class="tag ${esc(st.tag)}">${esc(st.label)}</span>
                             ${a.station ? `<span class="text-xs text-muted">${a.station}</span>` : ''}
                         </div>
                         <div style="display:flex;gap:6px;">
@@ -443,7 +443,7 @@ function loadApparatus() {
                                · ${li.author_name} · ${fmtDateShort(li.created_at)}`
                             : 'Never inspected'}
                     </div>
-                    ${a.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:5px;">${a.notes}</div>` : ''}
+                    ${a.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:5px;">${esc(a.notes)}</div>` : ''}
                 </div>`;
         }).join('');
     });
@@ -473,13 +473,13 @@ function openApparatusForm(a) {
                 <label class="form-label">Status</label>
                 <select class="input" id="ap-status">
                     ${Object.entries(APP_STATUS).map(([k, v]) =>
-                        `<option value="${k}" ${a.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
+                        `<option value="${k}" ${a.status === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
                 </select>
             </div>
         </div>
         <div class="form-group">
             <label class="form-label">Notes</label>
-            <textarea class="input" id="ap-notes" rows="3">${a.notes || ''}</textarea>
+            <textarea class="input" id="ap-notes" rows="3">${esc(a.notes || '')}</textarea>
         </div>
         ${a.id ? `<button class="btn btn-danger btn-sm" onclick="deleteApparatus(${a.id})">Delete Unit</button>` : ''}`,
     async () => {
@@ -562,7 +562,7 @@ async function viewApparatusLog(apparatusId, unitLabel) {
                         <span class="text-xs text-muted" style="margin-left:auto;">${fmtDateShort(l.created_at)}</span>
                     </div>
                     <div class="text-xs text-muted" style="margin-top:3px;">${l.author_name}</div>
-                    ${l.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${l.notes}</div>` : ''}
+                    ${l.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${esc(l.notes)}</div>` : ''}
                 </div>`).join('')
             : '<div class="text-xs text-muted">No inspections logged for this unit.</div>',
         () => closeModal(m), 'Close', '🚒');

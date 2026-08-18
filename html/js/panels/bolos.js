@@ -57,14 +57,14 @@ function boloCard(b) {
             <div class="card-header" style="margin-bottom:8px;">
                 <div style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;">
                     <span class="tag ${tagClass}">${isVehicle ? '🚗 VEHICLE' : '👤 PERSON'}</span>
-                    ${b.plate ? `<span class="font-mono font-bold" style="font-size:15px;color:var(--orange);">${b.plate}</span>` : ''}
+                    ${b.plate ? `<span class="font-mono font-bold" style="font-size:15px;color:var(--orange);">${esc(b.plate)}</span>` : ''}
                     <span class="text-xs text-muted font-mono">${timeAgo(b.created_at)}</span>
                 </div>
                 <button class="btn btn-danger btn-xs" onclick="clearBoloAndRefresh(${b.id})">Clear BOLO</button>
             </div>
-            <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:5px;">${b.description}</div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);margin-bottom:5px;">${esc(b.description)}</div>
             <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:8px;">
-                <strong style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Reason: </strong>${b.reason}
+                <strong style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Reason: </strong>${esc(b.reason)}
             </div>
             <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:12px;">
                 <span>Issued by: <strong class="text-secondary">${b.issued_by_name}</strong></span>

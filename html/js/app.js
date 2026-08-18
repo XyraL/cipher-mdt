@@ -188,7 +188,7 @@ function buildInterface(panels) {
             const li = document.createElement('li');
             li.className = 'nav-item';
             li.dataset.tab = key;
-            li.innerHTML = `<span class="nav-icon">${p.icon}</span> ${p.label}` +
+            li.innerHTML = `<span class="nav-icon">${p.icon}</span> ${esc(p.label)}` +
                 (p.badge ? `<span class="nav-badge ${p.badge}" id="badge-${key}"></span>` : '');
             nav.appendChild(li);
         }
@@ -533,6 +533,28 @@ function skeletonCard(rows = 3) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+// Escapes text before it goes into innerHTML.
+//
+// Almost everything this panel renders was typed by a player: arrest
+// narratives, officer notes, bulletin bodies, civilian names. It is then read
+// by a DIFFERENT player, which is what makes this matter — an unescaped `<` in
+// an arrest report is not a formatting bug, it is script execution inside
+// another officer's game client. CEF runs it exactly like a browser would.
+//
+// Use on every value that originated from a person. Numbers, ids, dates and
+// enum values from our own code do not need it, and wrapping them only adds
+// noise.
+function esc(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function fmtDate(ts) {
     if (!ts) return '—';
     const d = new Date(ts);
@@ -583,7 +605,7 @@ function showPanicAlert(data) {
                         text-transform:uppercase;">Officer Needs Assistance</div>
             <div style="font-size:16px;font-weight:700;color:#fff;margin:3px 0;">
                 ${data.officerName} · Badge #${data.badge}</div>
-            <div style="font-size:13px;color:#fca5a5;">📍 ${data.location}</div>
+            <div style="font-size:13px;color:#fca5a5;">📍 ${esc(data.location)}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
             <span style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#fca5a5;">${data.callNumber}</span>
@@ -637,7 +659,7 @@ function renderStatusPicker(currentCode) {
                 font-size:12px;font-weight:700;cursor:pointer;letter-spacing:.04em;
                 display:flex;align-items:center;gap:8px;">
                 <span style="width:8px;height:8px;border-radius:50%;background:${current.color};display:inline-block;"></span>
-                ${current.code} — ${current.label}
+                ${current.code} — ${esc(current.label)}
                 <span style="opacity:.6;font-size:10px;">▾</span>
             </button>
             <div id="status-dropdown" style="
@@ -654,7 +676,7 @@ function renderStatusPicker(currentCode) {
                         <span style="width:9px;height:9px;border-radius:50%;background:${s.color};flex-shrink:0;"></span>
                         <div>
                             <div style="font-size:12px;font-weight:700;color:${s.color};">${s.code}</div>
-                            <div style="font-size:11px;color:var(--text-muted);">${s.label}</div>
+                            <div style="font-size:11px;color:var(--text-muted);">${esc(s.label)}</div>
                         </div>
                     </div>`).join('')}
             </div>
@@ -685,7 +707,7 @@ function renderSearchHistory(containerEl) {
              onmouseenter="this.style.background='var(--bg-hover)'"
              onmouseleave="this.style.background=''">
             <span style="font-size:13px;opacity:.6;">${h.type === 'plate' ? '🚗' : '👤'}</span>
-            <span style="font-size:13px;font-family:var(--font-mono);color:var(--text-secondary);">${h.query}</span>
+            <span style="font-size:13px;font-family:var(--font-mono);color:var(--text-secondary);">${esc(h.query)}</span>
             <span style="margin-left:auto;font-size:10px;color:var(--text-muted);">${timeAgo(h.ts)}</span>
         </div>`).join('');
 }

@@ -119,7 +119,7 @@ function renderCallList(calls) {
             </div>
             <div class="call-type">${c.call_type || c.type}</div>
             <div class="call-location" style="display:flex;align-items:center;gap:8px;">
-                <span>📍 ${c.location}</span>
+                <span>📍 ${esc(c.location)}</span>
                 <span class="elapsed-chip ${elapsedClass(mins)}" data-created="${c.created_at}">⏱ ${formatElapsed(mins)}</span>
             </div>
             <div class="call-units">
@@ -148,9 +148,9 @@ function openCallDetail(callId) {
                     <span class="priority-badge priority-${call.priority||2}">${call.priority===1?'🔴':call.priority===3?'🟢':'🟡'} ${PRIORITY_LABELS[call.priority||2]}</span>
                 </div>
                 <div style="font-size:22px;font-weight:800;margin-bottom:4px;">${call.call_type || call.type}</div>
-                <div style="font-size:13px;color:var(--text-secondary);">📍 ${call.location}</div>
+                <div style="font-size:13px;color:var(--text-secondary);">📍 ${esc(call.location)}</div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:4px;display:flex;align-items:center;gap:10px;">
-                    <span>Created by ${call.created_by_name||'CAD'} · ${timeAgo(call.created_at)}</span>
+                    <span>Created by ${esc(call.created_by_name||'CAD')} · ${timeAgo(call.created_at)}</span>
                     <span class="elapsed-chip ${elapsedClass(elapsedMins(call.created_at))}" data-created="${call.created_at}">⏱ ${formatElapsed(elapsedMins(call.created_at))}</span>
                 </div>
             </div>
@@ -159,7 +159,7 @@ function openCallDetail(callId) {
                     ${STATUS_LABELS[call.status]||call.status}
                 </span>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-                    ${call.coords ? `<button class="btn btn-ghost btn-sm" onclick="routeToCall(${JSON.stringify(call.coords).replace(/"/g,"'")}, '${call.location}')">🗺 GPS Route</button>` : ''}
+                    ${call.coords ? `<button class="btn btn-ghost btn-sm" onclick="routeToCall(${JSON.stringify(call.coords).replace(/"/g,"'")}, '${esc(call.location)}')">🗺 GPS Route</button>` : ''}
                     <button class="btn btn-success btn-sm" onclick='respondToCall(${JSON.stringify(callId)})'>✓ Respond</button>
                     <button class="btn btn-ghost btn-sm" onclick='openUpdateStatusModal(${JSON.stringify(callId)},${JSON.stringify(call.status)})'>Update Status</button>
                 </div>
@@ -170,7 +170,7 @@ function openCallDetail(callId) {
             <div class="card-header" style="margin-bottom:6px;">
                 <div class="card-title">Description</div>
             </div>
-            <div style="font-size:13.5px;line-height:1.7;color:var(--text-secondary);">${call.description}</div>
+            <div style="font-size:13.5px;line-height:1.7;color:var(--text-secondary);">${esc(call.description)}</div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
@@ -183,7 +183,7 @@ function openCallDetail(callId) {
                     : call.units.map(u => `
                         <div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
                             <div>
-                                <div class="font-bold text-sm">${u.name}</div>
+                                <div class="font-bold text-sm">${esc(u.name)}</div>
                                 <div class="text-xs text-muted font-mono">Responded at ${u.respondedAt}</div>
                             </div>
                             <span class="tag tag-green">ACTIVE</span>
@@ -354,7 +354,7 @@ async function showCADHistory() {
                         <tr style="cursor:default;">
                             <td class="font-mono text-accent">${c.call_number}</td>
                             <td class="font-bold">${c.call_type || c.type}</td>
-                            <td class="text-secondary">${c.location}</td>
+                            <td class="text-secondary">${esc(c.location)}</td>
                             <td><span class="tag tag-${c.status==='completed'?'green':'red'}">${STATUS_LABELS[c.status]||c.status}</span></td>
                             <td>${(c.units||[]).length} units</td>
                             <td class="font-mono text-sm text-muted">${fmtDateShort(c.created_at)}</td>

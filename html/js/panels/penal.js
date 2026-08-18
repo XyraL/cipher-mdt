@@ -30,7 +30,7 @@ function renderChargePicker(pickerId, selectedId) {
                                      onclick="toggleCharge(this,'${pickerId}','${selectedId}')">
                                     <input type="checkbox" onclick="event.stopPropagation()">
                                     <span class="charge-code">${code.code}</span>
-                                    <span class="charge-name">${code.name}</span>
+                                    <span class="charge-name">${esc(code.name)}</span>
                                     <span class="charge-type-pill tag-${code.type==='felony'?'red':code.type==='misdemeanor'?'yellow':'blue'} tag"
                                           style="font-size:9px;">${code.type[0].toUpperCase()}</span>
                                     ${code.fine_amount > 0 ? `<span class="charge-fine">${dollarFmt(code.fine_amount)}</span>` : ''}
@@ -179,8 +179,8 @@ function loadPenalCodes() {
                                 <tr style="cursor:default;">
                                     <td class="font-mono" style="color:var(--accent-2);white-space:nowrap;">${c.code}</td>
                                     <td>
-                                        <div class="font-bold">${c.name}</div>
-                                        ${c.description ? `<div class="text-muted text-xs mt-1">${c.description}</div>` : ''}
+                                        <div class="font-bold">${esc(c.name)}</div>
+                                        ${c.description ? `<div class="text-muted text-xs mt-1">${esc(c.description)}</div>` : ''}
                                     </td>
                                     <td>${chargeTypeTag(c.type)}</td>
                                     <td class="font-mono ${c.fine_amount > 0 ? 'text-green' : 'text-muted'}">
@@ -271,7 +271,7 @@ function _penalCodeModalBody(code = {}) {
         </div>
         <div class="form-group">
             <label class="form-label">Description <span class="text-muted">(optional)</span></label>
-            <textarea class="textarea" id="pc-desc" style="min-height:80px;" placeholder="Brief description of this charge...">${code.description||''}</textarea>
+            <textarea class="textarea" id="pc-desc" style="min-height:80px;" placeholder="Brief description of this charge...">${esc(code.description||'')}</textarea>
         </div>`;
 }
 
@@ -296,7 +296,7 @@ function openAddPenalCodeModal() {
             btn.textContent = 'Saving…'; btn.disabled = true;
             const ok = await nuiFetch('addPenalCode', data);
             if (ok) {
-                showToast('Code Added', `${data.code} — ${data.name}`, 'success');
+                showToast('Code Added', `${data.code} — ${esc(data.name)}`, 'success');
                 closeModal(modal);
                 MDT.penalCodes = null; // bust cache
                 loadPenalCodes();
@@ -316,7 +316,7 @@ function openEditPenalCodeModal(code) {
             btn.textContent = 'Saving…'; btn.disabled = true;
             const ok = await nuiFetch('updatePenalCode', data);
             if (ok) {
-                showToast('Code Updated', `${data.code} — ${data.name}`, 'success');
+                showToast('Code Updated', `${data.code} — ${esc(data.name)}`, 'success');
                 closeModal(modal);
                 MDT.penalCodes = null;
                 loadPenalCodes();

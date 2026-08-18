@@ -134,7 +134,7 @@ function searchCivilians(query) {
                         ${results.map(c => `
                             <tr onclick="openCivilianProfile('${c.citizenid}')">
                                 <td>
-                                    <div class="font-bold">${c.firstname} ${c.lastname}</div>
+                                    <div class="font-bold">${esc(c.firstname)} ${esc(c.lastname)}</div>
                                     ${showCriminal && c.active_warrants > 0 ? '<div class="text-xs text-red mt-1">⚠ Active Warrant</div>' : ''}
                                 </td>
                                 <td class="font-mono">${c.dob || '—'}</td>
@@ -256,8 +256,8 @@ function civProfileBodies(data) {
 
     if (data.canSeeCriminal) {
         wrap('civ-warrants',  renderWarrantsList(data.warrants || [], data.citizenid));
-        wrap('civ-arrests',   renderArrestsList(data.arrests || []));
-        wrap('civ-citations', renderCitationsList(data.citations || []));
+        wrap('civ-arrests',   renderCivArrestsList(data.arrests || []));
+        wrap('civ-citations', renderCivCitationsList(data.citations || []));
         wrap('civ-vehicles',  renderVehiclesList(data.vehicles || []));
     }
     if (data.canSeeMedical) {
@@ -301,7 +301,7 @@ function renderCivMedical(data) {
             ${block('Conditions', med.conditions, 'tag-orange')}
             ${block('Medications', med.medications, 'tag-blue')}
             ${med.notes ? `<div class="mt-2"><div class="form-label">Notes</div>
-                <div style="font-size:12.5px;color:var(--text-secondary);">${med.notes}</div></div>` : ''}
+                <div style="font-size:12.5px;color:var(--text-secondary);">${esc(med.notes)}</div></div>` : ''}
         </div>`;
 }
 
@@ -337,14 +337,14 @@ function renderCivilianProfile(data) {
             </div>
             <div class="profile-info">
                 <div class="profile-name">
-                    ${data.firstname} ${data.lastname}
+                    ${esc(data.firstname)} ${esc(data.lastname)}
                     ${hasWarrant ? '<span class="tag tag-red">ACTIVE WARRANT</span>' : ''}
                     ${flags.map(f => `<span class="tag tag-orange">${f}</span>`).join('')}
                 </div>
                 <div class="profile-meta">
                     <span>📅 DOB: ${data.dob || '—'}</span>
                     <span>⚧ ${data.gender || '—'}</span>
-                    <span>📍 ${data.address || 'No address'}</span>
+                    <span>📍 ${esc(data.address || 'No address')}</span>
                     <span>📞 ${data.phone || 'No phone'}</span>
                 </div>
             </div>
@@ -356,7 +356,7 @@ function renderCivilianProfile(data) {
         ${(data.canSeeCriminal && data.notes) ? `
             <div class="alert alert-warn">
                 <span>📌</span>
-                <div><strong>Officer Notes:</strong> ${data.notes}</div>
+                <div><strong>Officer Notes:</strong> ${esc(data.notes)}</div>
             </div>` : ''}
 
         <div class="profile-tabs">${civProfileTabs(data)}</div>
@@ -368,7 +368,7 @@ function renderCivilianProfile(data) {
                 <div class="card-header"><div class="card-title">Officer Notes</div></div>
                 <div class="form-group">
                     <label class="form-label">Internal Notes (visible to all officers)</label>
-                    <textarea class="textarea" id="civ-notes-input" style="min-height:140px;" placeholder="Add notes about this individual...">${data.notes || ''}</textarea>
+                    <textarea class="textarea" id="civ-notes-input" style="min-height:140px;" placeholder="Add notes about this individual...">${esc(data.notes || '')}</textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Flags / Alerts</label>
@@ -405,8 +405,8 @@ function renderVehiclesList(vehicles) {
                         const [stateLabel, stateTag] = stateMap[v.state] || ['Unknown','tag-gray'];
                         return `
                         <tr>
-                            <td class="font-mono" style="font-weight:700;letter-spacing:.08em;">${v.plate}</td>
-                            <td>${v.label || v.vehicle || '—'}</td>
+                            <td class="font-mono" style="font-weight:700;letter-spacing:.08em;">${esc(v.plate)}</td>
+                            <td>${esc(v.label || v.vehicle || '—')}</td>
                             <td class="text-muted text-sm">${v.garage || '—'}</td>
                             <td><span class="tag ${stateTag}">${stateLabel}</span></td>
                             <td class="text-sm">${v.fuel ? Math.round(v.fuel) + '%' : '—'}</td>
@@ -432,13 +432,13 @@ function renderWarrantsList(warrants, citizenid) {
                 <span class="record-date">${fmtDate(w.created_at)}</span>
                 ${w.status==='active' ? `<button class="btn btn-ghost btn-xs ml-auto" onclick="clearWarrantFromProfile(${w.id},'${citizenid}')">Clear Warrant</button>` : ''}
             </div>
-            <div class="record-charges">${(w.charges||[]).map(c=>`<span class="tag tag-red">${c.code} — ${c.name}</span>`).join('')}</div>
-            ${w.description ? `<div class="record-narrative">${w.description}</div>` : ''}
+            <div class="record-charges">${(w.charges||[]).map(c=>`<span class="tag tag-red">${c.code} — ${esc(c.name)}</span>`).join('')}</div>
+            ${w.description ? `<div class="record-narrative">${esc(w.description)}</div>` : ''}
             <div class="record-officer">Issued by: <strong>${w.issued_by_name}</strong></div>
         </div>`).join('');
 }
 
-function renderArrestsList(arrests) {
+function renderCivArrestsList(arrests) {
     if (!arrests.length) return `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">No arrest records</div></div>`;
     return arrests.map(a => `
         <div class="record-item arrest-item">
@@ -448,13 +448,13 @@ function renderArrestsList(arrests) {
                 ${a.jail_time ? `<span class="tag tag-orange">${a.jail_time} min jail</span>` : ''}
                 <span class="record-date">${fmtDate(a.created_at)}</span>
             </div>
-            <div class="record-charges">${(a.charges||[]).map(c=>`<span class="tag tag-red">${c.code} — ${c.name}</span>`).join('')}</div>
-            ${a.narrative ? `<div class="record-narrative">${a.narrative}</div>` : ''}
-            <div class="record-officer">Arresting Officer: <strong>${a.officer_name}</strong>${a.location ? ` · 📍 ${a.location}` : ''}</div>
+            <div class="record-charges">${(a.charges||[]).map(c=>`<span class="tag tag-red">${c.code} — ${esc(c.name)}</span>`).join('')}</div>
+            ${a.narrative ? `<div class="record-narrative">${esc(a.narrative)}</div>` : ''}
+            <div class="record-officer">Arresting Officer: <strong>${esc(a.officer_name)}</strong>${a.location ? ` · 📍 ${esc(a.location)}` : ''}</div>
         </div>`).join('');
 }
 
-function renderCitationsList(citations) {
+function renderCivCitationsList(citations) {
     if (!citations.length) return `<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">No citations on file</div></div>`;
     return citations.map(c => `
         <div class="record-item citation-item">
@@ -463,9 +463,9 @@ function renderCitationsList(citations) {
                 <span class="tag ${c.paid?'tag-green':'tag-red'}">${c.paid?'PAID':'UNPAID'}</span>
                 <span class="record-date">${fmtDate(c.created_at)}</span>
             </div>
-            <div class="record-charges">${(c.charges||[]).map(ch=>`<span class="tag tag-yellow">${ch.code} — ${ch.name}</span>`).join('')}</div>
+            <div class="record-charges">${(c.charges||[]).map(ch=>`<span class="tag tag-yellow">${ch.code} — ${esc(ch.name)}</span>`).join('')}</div>
             <div style="margin-top:6px;font-size:13px;">Fine: <strong class="text-green">${dollarFmt(c.fine)}</strong></div>
-            <div class="record-officer">Officer: <strong>${c.officer_name}</strong>${c.location ? ` · 📍 ${c.location}` : ''}</div>
+            <div class="record-officer">Officer: <strong>${esc(c.officer_name)}</strong>${c.location ? ` · 📍 ${esc(c.location)}` : ''}</div>
         </div>`).join('');
 }
 
@@ -547,8 +547,8 @@ window.openCivilianProfile     = openCivilianProfile;
 window.renderCivilianProfile   = renderCivilianProfile;
 window.showCivTab              = showCivTab;
 window.renderWarrantsList      = renderWarrantsList;
-window.renderArrestsList       = renderArrestsList;
-window.renderCitationsList     = renderCitationsList;
+window.renderCivArrestsList       = renderCivArrestsList;
+window.renderCivCitationsList     = renderCivCitationsList;
 window.renderVehiclesList      = renderVehiclesList;
 window.clearWarrantFromProfile = clearWarrantFromProfile;
 window.saveCivNotes            = saveCivNotes;

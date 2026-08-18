@@ -101,7 +101,7 @@ function callIcon(call) {
 function unitPopup(u) {
     return `
         <div class="cmap-pop">
-            <div class="cmap-pop-name" style="color:${jobColor(u.job)};">${u.name || 'Unit'}</div>
+            <div class="cmap-pop-name" style="color:${jobColor(u.job)};">${esc(u.name || 'Unit')}</div>
             <div class="cmap-pop-meta">${(u.department || u.job || '').toUpperCase()} · Badge ${u.badge || '—'}</div>
             ${u.status ? `<div class="cmap-pop-meta">Status ${u.status}</div>` : ''}
             <div class="cmap-pop-actions">
@@ -116,7 +116,7 @@ function callPopup(c) {
         <div class="cmap-pop">
             <div class="cmap-pop-name">${c.call_number || ('#' + c.id)}</div>
             <div class="cmap-pop-meta">${c.call_type || c.type || 'Call'}</div>
-            <div class="cmap-pop-meta">📍 ${c.location || 'Unknown'}</div>
+            <div class="cmap-pop-meta">📍 ${esc(c.location || 'Unknown')}</div>
             <div class="cmap-pop-actions">
                 <button onclick="switchTab('cad')">Open in CAD</button>
                 ${c.coords ? `<button onclick="mapRouteTo(${c.coords.x||0},${c.coords.y||0})">Route</button>` : ''}
@@ -152,7 +152,7 @@ function initMapPanel() {
                     ${LEGEND.map(l => `
                         <div class="cmap-legend-row">
                             <span class="cmap-swatch" style="background:${l.color};box-shadow:0 0 5px ${l.color};"></span>
-                            <span>${l.label}</span>
+                            <span>${esc(l.label)}</span>
                         </div>`).join('')}
                     <div class="cmap-legend-row">
                         <span class="cmap-swatch cmap-swatch-diamond" style="background:#f59e0b;"></span>
@@ -353,7 +353,7 @@ function renderUnitList() {
                  onclick="mapFocusUnit('${u.citizenid}')">
                 <span class="cmap-swatch" style="background:${color};box-shadow:0 0 5px ${color};"></span>
                 <div class="cmap-unit-row-main">
-                    <div class="cmap-unit-row-name">${u.name || 'Unit'}</div>
+                    <div class="cmap-unit-row-name">${esc(u.name || 'Unit')}</div>
                     <div class="cmap-unit-row-sub">#${u.badge || '—'}${u.status ? ' · ' + u.status : ''}</div>
                 </div>
                 <span class="cmap-unit-row-dept" style="color:${color};">

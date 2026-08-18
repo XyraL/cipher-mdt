@@ -72,7 +72,7 @@ async function lookupPlate() {
                                 color:var(--text-primary);margin-bottom:14px;
                                 background:var(--bg-input);padding:12px 16px;border-radius:var(--radius);
                                 border:1px solid var(--border-light);text-align:center;">
-                        ${data.plate}
+                        ${esc(data.plate)}
                     </div>
                     <div class="info-grid">
                         <div class="info-row">

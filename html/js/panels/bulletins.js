@@ -40,7 +40,7 @@ function renderBulletinCard(b) {
                 <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
                     ${b.pinned ? '<span class="bulletin-pin" title="Pinned">📌</span>' : ''}
                     <span class="bulletin-priority-badge bulletin-badge-${b.priority}">${priLabel}</span>
-                    <span class="bulletin-title">${b.title}</span>
+                    <span class="bulletin-title">${esc(b.title)}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                     <span class="bulletin-meta">${timeAgo(b.created_at)}</span>
@@ -54,7 +54,7 @@ function renderBulletinCard(b) {
             </div>
             <div class="bulletin-body">${b.body.replace(/\n/g, '<br>')}</div>
             <div class="bulletin-footer">
-                <span>Posted by <strong>${b.created_by_name}</strong></span>
+                <span>Posted by <strong>${esc(b.created_by_name)}</strong></span>
                 ${b.expires_at ? `<span style="color:var(--yellow);">· Expires ${fmtDateShort(b.expires_at)}</span>` : ''}
             </div>
         </div>`;

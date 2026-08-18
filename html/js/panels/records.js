@@ -64,7 +64,7 @@ function openNewArrestModal(prefillPerson = null) {
                 citizenid: _arrestPerson.citizenid, charges, fine, jailTime, location, narrative, clearWarrants
             });
             if (result) {
-                showToast('Arrest Logged', `Arrest #${result} recorded for ${_arrestPerson.name}.`, 'success');
+                showToast('Arrest Logged', `Arrest #${result} recorded for ${esc(_arrestPerson.name)}.`, 'success');
                 closeModal(modal);
             } else {
                 showToast('Error', 'Could not log arrest.', 'error');
@@ -143,7 +143,7 @@ function openNewCitationModal(prefillPerson = null) {
                 citizenid: _citePerson.citizenid, charges, fine, location, notes, autoPay
             });
             if (result) {
-                showToast('Citation Issued', `Citation #${result} — ${dollarFmt(fine)} for ${_citePerson.name}`, 'success');
+                showToast('Citation Issued', `Citation #${result} — ${dollarFmt(fine)} for ${esc(_citePerson.name)}`, 'success');
                 closeModal(modal);
             } else {
                 showToast('Error', 'Could not issue citation.', 'error');
@@ -410,26 +410,26 @@ function renderArrestsList(list) {
                 <div class="card-header" style="cursor:pointer;" onclick="toggleRecordDetail('${detailId}',this)">
                     <div class="card-title">
                         <div class="card-title-icon" style="background:rgba(239,68,68,.12);color:#f87171;">🔒</div>
-                        ${a.civilian_name || a.citizenid}
+                        ${esc(a.civilian_name || a.citizenid)}
                         ${copyBtn(a.citizenid)}
                         <span class="tag tag-red" style="margin-left:8px;">ARREST</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
-                        <div style="font-size:11px;color:var(--text-muted);">#${a.id} · ${fmtDate(a.created_at)} · by ${a.officer_name}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">#${a.id} · ${fmtDate(a.created_at)} · by ${esc(a.officer_name)}</div>
                         ${hasNarr ? '<button class="record-expand-btn">▸ Details</button>' : ''}
                     </div>
                 </div>
                 <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;">
-                    ${charges.map(c => chargeTypeTag(c.type||'misdemeanor') + ` <span style="font-size:11px;vertical-align:middle;">${c.name||c.title}</span>`).join(' ')}
+                    ${charges.map(c => chargeTypeTag(c.type||'misdemeanor') + ` <span style="font-size:11px;vertical-align:middle;">${esc(c.name||c.title)}</span>`).join(' ')}
                 </div>
                 <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
                     ${a.fine > 0 ? `<span>💰 <strong style="color:var(--green);">${dollarFmt(a.fine)}</strong></span>` : ''}
                     ${a.jail_time > 0 ? `<span>⏰ <strong style="color:var(--yellow);">${a.jail_time} min</strong></span>` : ''}
-                    ${a.location ? `<span>📍 ${a.location}</span>` : ''}
+                    ${a.location ? `<span>📍 ${esc(a.location)}</span>` : ''}
                 </div>
                 ${hasNarr ? `
                 <div id="${detailId}" class="record-detail-body" style="display:none;">
-                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.65;white-space:pre-wrap;">${a.narrative}</div>
+                    <div style="font-size:12px;color:var(--text-secondary);line-height:1.65;white-space:pre-wrap;">${esc(a.narrative)}</div>
                 </div>` : ''}
                 ${renderRecordTags('arrest', a.id, a.tags)}
             </div>`;
@@ -456,23 +456,23 @@ function renderCitationsList(list) {
                 <div class="card-header">
                     <div class="card-title">
                         <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📄</div>
-                        ${c.civilian_name || c.citizenid}
+                        ${esc(c.civilian_name || c.citizenid)}
                         ${copyBtn(c.citizenid)}
                         <span class="tag tag-blue" style="margin-left:8px;">CITATION</span>
                         <span class="tag ${paid ? 'tag-green' : 'tag-red'}" style="margin-left:4px;">${paid ? 'PAID' : 'UNPAID'}</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;">
                         ${!paid && isSupervisor ? `<button class="btn btn-success btn-xs" onclick="event.stopPropagation();markCitationPaid(${c.id})">✓ Mark Paid</button>` : ''}
-                        <div style="font-size:11px;color:var(--text-muted);">#${c.id} · ${fmtDate(c.created_at)} · by ${c.officer_name}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">#${c.id} · ${fmtDate(c.created_at)} · by ${esc(c.officer_name)}</div>
                     </div>
                 </div>
                 <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;">
-                    ${charges.map(ch => chargeTypeTag(ch.type||'infraction') + ` <span style="font-size:11px;vertical-align:middle;">${ch.name||ch.title}</span>`).join(' ')}
+                    ${charges.map(ch => chargeTypeTag(ch.type||'infraction') + ` <span style="font-size:11px;vertical-align:middle;">${esc(ch.name||ch.title)}</span>`).join(' ')}
                 </div>
                 <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
                     ${c.fine > 0 ? `<span>💰 <strong style="color:var(--yellow);">${dollarFmt(c.fine)}</strong></span>` : ''}
-                    ${c.location ? `<span>📍 ${c.location}</span>` : ''}
-                    ${c.notes ? `<span style="color:var(--text-secondary);">${c.notes}</span>` : ''}
+                    ${c.location ? `<span>📍 ${esc(c.location)}</span>` : ''}
+                    ${c.notes ? `<span style="color:var(--text-secondary);">${esc(c.notes)}</span>` : ''}
                 </div>
                 ${renderRecordTags('citation', c.id, c.tags)}
             </div>`;

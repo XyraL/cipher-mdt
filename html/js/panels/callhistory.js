@@ -86,7 +86,7 @@ function renderCallHistory(calls) {
                     return `<tr>
                         <td style="font-family:monospace;font-size:12px">${c.call_number || '—'}</td>
                         <td>${c.call_type || '—'}</td>
-                        <td style="color:var(--text-muted);font-size:12px">${c.location || '—'}</td>
+                        <td style="color:var(--text-muted);font-size:12px">${esc(c.location || '—')}</td>
                         <td><span class="badge" style="background:${color}22;color:${color}">${c.status || '—'}</span></td>
                         <td style="color:var(--text-muted);font-size:12px">${c.caller_name || '—'}</td>
                         <td style="color:var(--text-muted);font-size:12px">${date}</td>

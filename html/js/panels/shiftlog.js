@@ -146,7 +146,7 @@ async function loadWeeklyHours() {
         const hrs  = Math.floor(total / 60);
         const mins = total % 60;
         return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-            <span style="flex:1;font-size:13px">${r.officer_name}</span>
+            <span style="flex:1;font-size:13px">${esc(r.officer_name)}</span>
             <span style="color:var(--text-muted);font-size:12px">${hrs}h ${mins}m</span>
         </div>`;
     }).join('');
@@ -191,7 +191,7 @@ function renderShiftHistory(rows) {
                     const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
                     const cout = r.clock_out ? new Date(r.clock_out).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
                     return `<tr>
-                        <td>${r.officer_name}</td>
+                        <td>${esc(r.officer_name)}</td>
                         <td style="color:var(--text-muted);font-size:12px">${r.badge || '—'}</td>
                         <td style="color:var(--text-muted);font-size:12px">${cin}</td>
                         <td style="color:var(--text-muted);font-size:12px">${cout}</td>
