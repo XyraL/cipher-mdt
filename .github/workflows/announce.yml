@@ -1,0 +1,14 @@
+# Announces a published release to Discord.
+#
+# The formatting lives in XyraL/xyral-bot so every script announces the same
+# way and there is only one file to change.
+name: Announce
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  announce:
+    uses: XyraL/xyral-bot/.github/workflows/announce-release.yml@master
+    secrets: inherit
