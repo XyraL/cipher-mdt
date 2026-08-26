@@ -3,7 +3,7 @@ game 'gta5'
 
 name 'CipherMDT'
 description 'Multi-department MDT (Police / EMS / Fire) with CAD integration for QBox'
-version '1.5.0'
+version '1.6.0'
 author 'cipher-mdt'
 
 shared_scripts {

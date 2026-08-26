@@ -111,7 +111,9 @@ lib.callback.register('cipher-mdt:server:createIncident', function(source, data)
     if status ~= 'draft' then
         exports['cipher-mdt']:AuditLog('Incident Created', officer.name, caseNumber .. ': ' .. data.title)
     end
-    return id, caseNumber
+    -- A table, not two values: the NUI bridge keeps only the first return,
+    -- so the case number would never reach the panel otherwise.
+    return { id = id, caseNumber = caseNumber }
 end)
 
 -- Moving a report along its lifecycle. Separate from updateIncident so that

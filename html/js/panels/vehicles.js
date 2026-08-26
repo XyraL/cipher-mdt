@@ -39,11 +39,61 @@ async function lookupPlate() {
     const data = await nuiFetch('lookupPlate', plate);
 
     if (!data || !data.found) {
-        el.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">❌</div>
-                <div class="empty-title">No vehicle found</div>
-                <div class="empty-subtitle">Plate <span class="font-mono" style="color:var(--accent-2);">${plate}</span> is not registered</div>
+        const matches = (data && data.matches) || [];
+        const bolo = data && data.bolo;
+
+        // A BOLO can sit on a plate nobody has registered, and that is exactly
+        // the plate an officer most wants flagged.
+        const boloBanner = bolo ? `
+            <div class="alert alert-danger" style="margin-bottom:12px;">
+                <span>🚨</span>
+                <div>
+                    <strong>ACTIVE BOLO — ${esc(plate)}</strong><br>
+                    ${esc(bolo.reason || 'No reason recorded')}
+                    ${bolo.issued_by_name ? ` · issued by ${esc(bolo.issued_by_name)}` : ''}
+                </div>
+            </div>` : '';
+
+        if (!matches.length) {
+            el.innerHTML = boloBanner + `
+                <div class="empty-state">
+                    <div class="empty-icon">❌</div>
+                    <div class="empty-title">No vehicle found</div>
+                    <div class="empty-subtitle">Plate <span class="font-mono" style="color:var(--accent-2);">${esc(plate)}</span> is not registered</div>
+                </div>`;
+            return;
+        }
+
+        const stateNames = { 0: ['Out', 'tag-yellow'], 1: ['Garaged', 'tag-green'], 2: ['Impounded', 'tag-red'] };
+
+        el.innerHTML = boloBanner + `
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">${matches.length} plate${matches.length === 1 ? '' : 's'} containing "${esc(plate)}"</div>
+                </div>
+                <div class="form-hint" style="margin-bottom:10px;">No exact match. Pick the one you saw.</div>
+                <div class="data-table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Plate</th><th>Vehicle</th><th>Owner</th><th>Status</th></tr></thead>
+                        <tbody>
+                            ${matches.map(m => {
+                                const [label, tag] = stateNames[m.state] || ['Unknown', 'tag-gray'];
+                                // Plates are alphanumeric in game; stripping to
+                                // that set means this is safe to drop into the
+                                // handler, which no amount of HTML escaping
+                                // would achieve inside an attribute.
+                                const safe = String(m.plate || '').replace(/[^A-Za-z0-9 ]/g, '');
+                                return `
+                                    <tr style="cursor:pointer;" onclick="lookupPlateExact('${safe}')">
+                                        <td class="font-mono" style="font-weight:700;letter-spacing:.08em;">${esc(m.plate)}</td>
+                                        <td>${esc(m.label || '—')}</td>
+                                        <td>${esc(m.owner_name || 'Unregistered')}</td>
+                                        <td><span class="tag ${tag}">${label}</span></td>
+                                    </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
             </div>`;
         return;
     }
@@ -190,6 +240,15 @@ function openTrafficStop(owner) {
     openNewCitationModal({ citizenid: owner.citizenid, name: owner.name, dob: owner.dob });
 }
 
+// Picking a partial-match row runs the real lookup for that exact plate.
+function lookupPlateExact(plate) {
+    const input = document.getElementById('plate-search');
+    if (!input) return;
+    input.value = plate;
+    lookupPlate();
+}
+
+window.lookupPlateExact = lookupPlateExact;
 window.initVehiclePanel = initVehiclePanel;
 window.lookupPlate      = lookupPlate;
 window.flagStolen       = flagStolen;

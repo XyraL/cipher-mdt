@@ -47,6 +47,14 @@
 
 ### Police
 
+- **Licence status** — Driver, weapon and business licences on the civilian profile, with suspend, revoke and reinstate. Qbox only tracks whether someone *holds* a licence; the MDT adds the state it is in, who changed it, and why. Suspending also flips the Qbox flag so other resources agree, and it will never hand back a licence that was never held. Revoking is supervisor-only by default
+- **Aliases** — Record street names and false identities, and find people by them. Searching by phone number works too, with or without dashes
+- **Partial plate search** — An officer who caught three characters of a plate gets a shortlist instead of nothing. Plates with no registration still report an outstanding BOLO
+- **Report lifecycle** — Reports move through draft, open, under review and closed. Drafts are visible only to their author. Authors move their own reports; supervisors move anyone's
+- **Report templates** — Traffic stop, use of force, pursuit, robbery and assault skeletons that prompt for the things a report is useless without. Edit them at the top of `html/js/panels/incidents.js`
+- **Autosaved narratives** — What you are typing is saved locally as you go, and offered back if the panel closes on you
+- **Case numbers** — Generated as `INC-<year>-<id>` instead of being typed by hand
+
 - **CAD Dispatch** — Create, update, and respond to live calls with P1/P2/P3 priority, elapsed timer, unit notes, GPS routing, and call history
 - **Civilian Lookup** — Full profiles with mugshot, flags, arrest history, citations, vehicles, warrants, and officer notes
 - **Vehicle Lookup** — Plate search with registration details and traffic stop shortcut
@@ -98,6 +106,11 @@ ensure cipher-mdt
 Run `sql/mdt.sql` against your database. It uses `CREATE TABLE IF NOT EXISTS` throughout, so it is safe to re-run.
 
 If you are **upgrading from a previous version**, run only the commented `ALTER TABLE` lines at the top of the SQL file that match your current version.
+
+> **Upgrading to 1.6:** run the `v1.5 → v1.6` block at the top of `sql/mdt.sql`.
+> It adds `mdt_licences` and four columns, and touches nothing existing. Licence
+> status starts empty, which reads as "valid" for everyone until an officer
+> changes one.
 
 > **Upgrading to multi-department:** re-run `sql/mdt.sql`. It adds eight new
 > tables (`mdt_pcr`, `mdt_medical`, `mdt_medical_history`, `mdt_narc_log`,

@@ -327,7 +327,7 @@ function renderRecordTags(type, id, tags) {
         <div class="record-tags-row" id="tags-row-${type}-${id}">
             ${list.map((t, i) => `
                 <span class="record-user-tag">
-                    ${t}<button class="tag-remove" title="Remove" onclick="removeRecordTag('${type}',${id},${i})">×</button>
+                    ${esc(t)}<button class="tag-remove" title="Remove" onclick="removeRecordTag('${type}',${id},${i})">×</button>
                 </span>`).join('')}
             <button class="btn-add-tag" onclick="openTagPicker(event,'${type}',${id})">+ Tag</button>
         </div>`;

@@ -1,3 +1,68 @@
+// Where a report is in its life, as opposed to how bad the incident was.
+// Severity describes the event; status describes the paperwork.
+const INCIDENT_STATUS_LABELS = {
+    draft:  { label: 'Draft',        tag: 'tag-gray'   },
+    open:   { label: 'Open',         tag: 'tag-blue'   },
+    review: { label: 'Under Review', tag: 'tag-yellow' },
+    closed: { label: 'Closed',       tag: 'tag-green'  },
+};
+
+// Narrative skeletons.
+//
+// These exist because the hard part of a report is not typing, it is
+// remembering what to include at 3am — and a report missing the time, the
+// location or what was actually seized is the one that falls apart later.
+// Edit these freely; they are prompts, not a schema.
+const INCIDENT_TEMPLATES = {
+    'Traffic stop': [
+        'Date/time of stop:',
+        'Location:',
+        'Vehicle (plate, make, colour):',
+        'Reason for stop:',
+        'Observations on approach:',
+        'Action taken (warning / citation / arrest):',
+        'Outcome:',
+    ],
+    'Use of force': [
+        'Date/time:',
+        'Location:',
+        'Subject:',
+        'What was the subject doing immediately before force was used:',
+        'Verbal commands given:',
+        'Force used and why that level:',
+        'Injuries and medical attention provided:',
+        'Witnesses:',
+        'Supervisor notified:',
+    ],
+    'Pursuit': [
+        'Date/time pursuit began:',
+        'Start location and direction:',
+        'Reason for pursuit:',
+        'Speeds and road conditions:',
+        'Units involved:',
+        'Termination reason and location:',
+        'Outcome:',
+    ],
+    'Robbery / theft': [
+        'Date/time reported:',
+        'Location:',
+        'Victim:',
+        'Property taken and estimated value:',
+        'Suspect description:',
+        'Evidence collected:',
+        'Witnesses:',
+    ],
+    'Assault': [
+        'Date/time:',
+        'Location:',
+        'Victim and injuries:',
+        'Suspect:',
+        'Weapon involved:',
+        'Medical response:',
+        'Witnesses:',
+    ],
+};
+
 const SEVERITY_LABELS = {
     low:      { label: 'Low',      color: 'var(--green)',  tag: 'tag-green'  },
     moderate: { label: 'Moderate', color: 'var(--yellow)', tag: 'tag-yellow' },
@@ -16,6 +81,9 @@ function loadIncidents(filter = 'all') {
             <div class="panel-actions">
                 <button class="btn btn-ghost btn-sm ${filter==='all'?'active':''}" onclick="loadIncidents('all')">All</button>
                 <button class="btn btn-ghost btn-sm ${filter==='mine'?'active':''}" onclick="loadIncidents('mine')">Mine</button>
+                <button class="btn btn-ghost btn-sm ${filter==='drafts'?'active':''}" onclick="loadIncidents('drafts')">Drafts</button>
+                <button class="btn btn-ghost btn-sm ${filter==='open'?'active':''}" onclick="loadIncidents('open')">Open</button>
+                <button class="btn btn-ghost btn-sm ${filter==='review'?'active':''}" onclick="loadIncidents('review')">Review</button>
                 <button class="btn btn-primary btn-sm" onclick="openNewIncidentModal()">+ New Report</button>
             </div>
         </div>
@@ -23,7 +91,13 @@ function loadIncidents(filter = 'all') {
             ${Array(4).fill(0).map(() => `<div class="card mb-2">${skeletonLines(3)}</div>`).join('')}
         </div>`;
 
-    nuiFetch('getIncidents', filter).then(incidents => {
+    // 'drafts' is not a status the server knows by that name — it is the draft
+    // status filtered to this officer, which the server enforces anyway.
+    const query = filter === 'drafts' ? { filter: 'mine', status: 'draft' }
+        : (filter === 'open' || filter === 'review' || filter === 'closed') ? { filter: 'all', status: filter }
+        : { filter };
+
+    nuiFetch('getIncidents', query).then(incidents => {
         const body = document.getElementById('incidents-body');
         if (!incidents || incidents.length === 0) {
             body.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No incident reports found</div></div>';
@@ -38,9 +112,10 @@ function loadIncidents(filter = 'all') {
                         <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📋</div>
                         <span class="font-bold">${esc(i.title)}</span>
                         ${sev ? `<span class="tag ${esc(sev.tag)}" style="margin-left:8px;">${esc(sev.label)}</span>` : ''}
+                        ${statusTag(i.status)}
                     </div>
                     <div style="font-size:11px;color:var(--text-muted);">
-                        #${i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}
+                        ${i.case_number ? esc(i.case_number) : '#' + i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}
                     </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-muted);">
@@ -82,6 +157,7 @@ async function openIncidentDetail(id) {
             <button class="btn btn-ghost btn-sm" onclick="loadIncidents()">← Back</button>
             <button class="btn btn-ghost btn-sm" onclick="printIncidentReport(${id})">🖨 Print</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditIncidentModal(${id})">✏ Edit</button>
+            ${statusControl(incident)}
             <button class="btn btn-danger btn-sm" onclick="deleteIncident(${id})">🗑 Delete</button>`;
     } else if (actions) {
         actions.innerHTML = `
@@ -425,10 +501,25 @@ function openNewIncidentModal() {
                 </select>
             </div>
         </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:2;">
+                <label class="form-label">Location</label>
+                <input class="input" id="inc-location" placeholder="Where did this happen?">
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Start from a template</label>
+                <select class="select" id="inc-template" onchange="applyIncidentTemplate()">
+                    <option value="">— Blank —</option>
+                    ${Object.keys(INCIDENT_TEMPLATES).map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}
+                </select>
+            </div>
+        </div>
         <div class="form-group">
             <label class="form-label">Narrative</label>
-            <textarea class="textarea" id="inc-narrative" style="min-height:240px;" placeholder="Write a detailed account of the incident. Include timeline of events, actions taken, evidence collected, etc."></textarea>
+            <textarea class="textarea" id="inc-narrative" style="min-height:240px;" placeholder="Write a detailed account of the incident. Include timeline of events, actions taken, evidence collected, etc." oninput="queueDraftAutosave()"></textarea>
+            <div class="form-hint" id="inc-autosave-note">Saved to this machine as you type, so a misclick cannot lose it.</div>
         </div>
+        <button class="btn btn-ghost btn-sm" onclick="saveIncidentDraft()">💾 Save as draft</button>
         <div class="form-row">
             <div class="form-group" style="flex:1;">
                 <label class="form-label">Link Civilians</label>
@@ -459,13 +550,15 @@ function openNewIncidentModal() {
                 title,
                 narrative,
                 severity,
+                location: document.getElementById('inc-location')?.value.trim() || '',
                 involved_civilians: window._linkedCivilians || [],
                 involved_officers: window._linkedOfficers || [],
                 linked_arrests:    (window._linkedArrests || []).map(r => r.id),
                 linked_citations:  (window._linkedCitations || []).map(r => r.id),
             });
             if (result) {
-                showToast('Report Created', `Incident #${result}`, 'success');
+                clearIncidentDraft();
+                showToast('Report Created', 'Filed as ' + (result.caseNumber || ('#' + (result.id || result))), 'success');
                 closeModal(modal);
                 loadIncidents();
             } else {
@@ -478,7 +571,147 @@ function openNewIncidentModal() {
         createPersonLinker('inc-off-linker', 'officer');
         createRecordLinker('inc-arrest-linker', 'arrest');
         createRecordLinker('inc-citation-linker', 'citation');
+        restoreIncidentDraft();
     }, 50);
+}
+
+// ── Report writing helpers ──────────────────────────────────────────────────
+
+function statusTag(status) {
+    const s = INCIDENT_STATUS_LABELS[status];
+    if (!s || status === 'open') return '';   // "Open" is the norm; badging it is noise
+    return `<span class="tag ${s.tag}" style="margin-left:6px;">${s.label}</span>`;
+}
+
+// Where a report can go next. A draft is unfiled, so its only move is to be
+// filed; everything else can go back and forth while an investigation runs.
+const STATUS_NEXT = {
+    draft:  [['open', 'File report']],
+    open:   [['review', 'Send for review'], ['closed', 'Close']],
+    review: [['open', 'Reopen'], ['closed', 'Close']],
+    closed: [['open', 'Reopen']],
+};
+
+function statusControl(incident) {
+    const moves = STATUS_NEXT[incident.status || 'open'] || [];
+    return moves.map(([status, label]) =>
+        `<button class="btn btn-ghost btn-sm" onclick="changeIncidentStatus(${incident.id},'${status}')">${label}</button>`
+    ).join('');
+}
+
+async function changeIncidentStatus(id, status) {
+    const res = await nuiFetch('setIncidentStatus', { id, status });
+    if (res && res.ok) {
+        showToast('Report updated', (INCIDENT_STATUS_LABELS[status] || {}).label || status, 'success');
+        openIncidentDetail(id);
+    } else {
+        showToast('Could not update', (res && res.error) || 'Unknown error', 'error');
+    }
+}
+
+function applyIncidentTemplate() {
+    const name = document.getElementById('inc-template')?.value;
+    const box = document.getElementById('inc-narrative');
+    if (!name || !box) return;
+
+    const skeleton = (INCIDENT_TEMPLATES[name] || []).join('\n\n');
+
+    // Never overwrite work already done. Someone who picks a template halfway
+    // through a narrative wants the prompts, not a blank page.
+    box.value = box.value.trim() ? box.value.trimEnd() + '\n\n' + skeleton : skeleton;
+    box.focus();
+    queueDraftAutosave();
+}
+
+// ── Local autosave ──────────────────────────────────────────────────────────
+// Separate from server-side drafts and solving a different problem: this is
+// crash and misclick insurance for the text in front of you right now. A
+// server draft is for finishing a report next shift.
+const DRAFT_KEY = 'cipher-mdt:incident-draft';
+let _draftTimer = null;
+
+function queueDraftAutosave() {
+    clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(saveIncidentDraftLocal, 800);
+}
+
+function saveIncidentDraftLocal() {
+    try {
+        const payload = {
+            title:     document.getElementById('inc-title')?.value || '',
+            narrative: document.getElementById('inc-narrative')?.value || '',
+            location:  document.getElementById('inc-location')?.value || '',
+            severity:  document.getElementById('inc-severity')?.value || '',
+            at: Date.now(),
+        };
+        if (!payload.title && !payload.narrative) return;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+
+        const note = document.getElementById('inc-autosave-note');
+        if (note) note.textContent = 'Saved locally at ' + new Date().toLocaleTimeString();
+    } catch (e) {
+        // Storage being unavailable is not worth interrupting a report over.
+    }
+}
+
+function clearIncidentDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+}
+
+function restoreIncidentDraft() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) { return; }
+    if (!saved || (!saved.title && !saved.narrative)) return;
+
+    const note = document.getElementById('inc-autosave-note');
+    if (!note) return;
+
+    // Offered rather than applied. Silently refilling a form is alarming when
+    // you meant to start a new report.
+    note.innerHTML = `Unsent report from ${new Date(saved.at).toLocaleString()}.
+        <button class="btn btn-ghost btn-xs" onclick="applyStoredDraft()">Restore it</button> ·
+        <button class="btn btn-ghost btn-xs" onclick="clearIncidentDraft();document.getElementById('inc-autosave-note').textContent='Discarded.'">Discard</button>`;
+}
+
+function applyStoredDraft() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) { return; }
+    if (!saved) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    set('inc-title', saved.title);
+    set('inc-narrative', saved.narrative);
+    set('inc-location', saved.location);
+    set('inc-severity', saved.severity);
+    const note = document.getElementById('inc-autosave-note');
+    if (note) note.textContent = 'Restored.';
+}
+
+// Files the report as a draft: saved server-side, visible only to its author.
+async function saveIncidentDraft() {
+    const title = document.getElementById('inc-title')?.value.trim();
+    const narrative = document.getElementById('inc-narrative')?.value.trim();
+    if (!title) { showToast('Title needed', 'A draft still needs something to find it by.', 'error'); return; }
+
+    const result = await nuiFetch('createIncident', {
+        title,
+        narrative: narrative || '(draft)',
+        severity: document.getElementById('inc-severity')?.value || '',
+        location: document.getElementById('inc-location')?.value.trim() || '',
+        status: 'draft',
+        involved_civilians: window._linkedCivilians || [],
+        involved_officers:  window._linkedOfficers || [],
+        linked_arrests:     (window._linkedArrests || []).map(r => r.id),
+        linked_citations:   (window._linkedCitations || []).map(r => r.id),
+    });
+
+    if (result) {
+        clearIncidentDraft();
+        showToast('Draft saved', 'Only you can see it until you file it.', 'success');
+        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+        loadIncidents('drafts');
+    } else {
+        showToast('Error', 'Could not save the draft.', 'error');
+    }
 }
 
 function openEditIncidentModal(id) {
@@ -650,3 +883,13 @@ window.createRecordLinker           = createRecordLinker;
 window.linkRecord                   = linkRecord;
 window.unlinkRecord                 = unlinkRecord;
 window.refreshLinkedRecordsDisplay  = refreshLinkedRecordsDisplay;
+
+window.statusTag              = statusTag;
+window.statusControl          = statusControl;
+window.changeIncidentStatus   = changeIncidentStatus;
+window.applyIncidentTemplate  = applyIncidentTemplate;
+window.queueDraftAutosave     = queueDraftAutosave;
+window.saveIncidentDraft      = saveIncidentDraft;
+window.clearIncidentDraft     = clearIncidentDraft;
+window.restoreIncidentDraft   = restoreIncidentDraft;
+window.applyStoredDraft       = applyStoredDraft;
