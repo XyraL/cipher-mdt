@@ -23,6 +23,13 @@
 -- ALTER TABLE mdt_warrants  ADD COLUMN IF NOT EXISTS expiry_alert_sent TINYINT(1)  DEFAULT 0;
 -- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS case_number       VARCHAR(50)  DEFAULT NULL;
 -- CREATE TABLE IF NOT EXISTS mdt_shift_log ... (see below)
+-- v1.5 → v1.6
+-- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS status      VARCHAR(20)  NOT NULL DEFAULT 'open';
+-- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS location    VARCHAR(255) DEFAULT NULL;
+-- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMP    NULL DEFAULT NULL;
+-- ALTER TABLE mdt_incidents ADD INDEX IF NOT EXISTS idx_status (status);
+-- ALTER TABLE mdt_civilians ADD COLUMN IF NOT EXISTS aliases     JSON         DEFAULT NULL;
+-- CREATE TABLE IF NOT EXISTS mdt_licences ... (see below)
 
 CREATE TABLE IF NOT EXISTS `mdt_officers` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -49,6 +56,7 @@ CREATE TABLE IF NOT EXISTS `mdt_civilians` (
     `image` TEXT DEFAULT NULL,
     `flags` JSON DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
+    `aliases` JSON DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_name` (`lastname`, `firstname`),
@@ -130,12 +138,16 @@ CREATE TABLE IF NOT EXISTS `mdt_incidents` (
     `case_number` VARCHAR(50) DEFAULT NULL,
     `severity` VARCHAR(20) DEFAULT NULL,
     `tags` JSON DEFAULT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'open',
+    `location` VARCHAR(255) DEFAULT NULL,
+    `occurred_at` TIMESTAMP NULL DEFAULT NULL,
     `created_by` VARCHAR(50) NOT NULL,
     `created_by_name` VARCHAR(100) NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_created_by` (`created_by`),
-    KEY `idx_case_number` (`case_number`)
+    KEY `idx_case_number` (`case_number`),
+    KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `mdt_penal_codes` (
@@ -415,4 +427,27 @@ CREATE TABLE IF NOT EXISTS `mdt_apparatus_log` (
     `created_at`       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_apparatus` (`apparatus_id`),
     KEY `idx_created`   (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Licence status.
+--
+-- Qbox already stores whether a character HOLDS a licence, in
+-- players.metadata.licences. It has no concept of one being suspended, of who
+-- suspended it, or of why — which is most of what an officer actually needs to
+-- know at a traffic stop. This table holds that layer.
+--
+-- A citizen with no row here is treated as valid, so the table only ever
+-- carries exceptions rather than a row per person per licence.
+CREATE TABLE IF NOT EXISTS `mdt_licences` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `citizenid` VARCHAR(50) NOT NULL,
+    `type` VARCHAR(30) NOT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'valid',
+    `reason` TEXT DEFAULT NULL,
+    `expires_at` TIMESTAMP NULL DEFAULT NULL,
+    `changed_by` VARCHAR(50) DEFAULT NULL,
+    `changed_by_name` VARCHAR(100) DEFAULT NULL,
+    `changed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_citizen_type` (`citizenid`, `type`),
+    KEY `idx_citizenid` (`citizenid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -300,3 +300,31 @@ function Dept.BlipColor(jobName)
     local cfg = Dept.ConfigOfJob(jobName)
     return (cfg and cfg.blipColor) or 3
 end
+
+-- Licences shown on a civilian profile.
+--
+-- Qbox already tracks whether a character HOLDS each of these, in
+-- metadata.licences. What it has no concept of is a licence being suspended —
+-- who did it, why, or until when — which is most of what an officer wants at a
+-- traffic stop. The MDT stores that layer alongside it.
+--
+-- `key` must match the key Qbox uses in metadata.licences. Anything listed
+-- here that Qbox does not know about simply shows as "not held".
+Config.Licences = {
+    Enabled = true,
+
+    -- Suspending or revoking also flips the Qbox metadata flag off, so any
+    -- other resource that checks `metadata.licences.driver` sees it too. Turn
+    -- this off to keep the MDT's view advisory only.
+    WriteBackToMetadata = true,
+
+    -- Only supervisors may revoke. Suspension is an ordinary officer action,
+    -- because it is reversible and happens roadside.
+    RevokeRequiresSupervisor = true,
+
+    Types = {
+        { key = 'driver',   label = 'Driver',   icon = '🚗' },
+        { key = 'weapon',   label = 'Weapon',   icon = '🔫' },
+        { key = 'business', label = 'Business', icon = '💼' },
+    },
+}

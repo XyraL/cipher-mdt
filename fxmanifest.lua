@@ -34,6 +34,7 @@ server_scripts {
     'server/officers.lua',
     'server/civilians.lua',
     'server/vehicles.lua',
+    'server/licences.lua',
     'server/warrants.lua',
     'server/bolos.lua',
     'server/records.lua',

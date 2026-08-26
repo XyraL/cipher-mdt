@@ -21,7 +21,7 @@ function _renderCivFlagsEditor(citizenid) {
             ${FLAG_PRESETS.map(f => `
                 <button class="flag-preset-btn${_civFlagsList.includes(f) ? ' active' : ''}"
                         onclick="_toggleCivFlag('${citizenid.replace(/'/g,"\\'")}','${f.replace(/'/g,"\\'")}')">
-                    ${f}
+                    ${esc(f)}
                 </button>`).join('')}
         </div>
         <div class="flag-active-row">
@@ -238,6 +238,12 @@ function civProfileTabs(data) {
         tabs.push(['civ-medical', 'Medical', null]);
         tabs.push(['civ-medhist', 'History', (data.medical_history || []).length]);
     }
+    if (data.canSeeCriminal && (data.licences || []).length) {
+        // Count what is wrong rather than what exists — a badge reading "2" on
+        // a licence tab should mean two problems, not two licences held.
+        const bad = data.licences.filter(l => l.status !== 'valid').length;
+        tabs.push(['civ-licences', 'Licences', bad || null]);
+    }
     if (data.canSeeCriminal) tabs.push(['civ-officer-notes', 'Notes', null]);
 
     return tabs.map(([id, label, count], i) => `
@@ -250,7 +256,7 @@ function civProfileBodies(data) {
     const out = [];
     let first = true;
     const wrap = (id, html) => {
-        out.push(`<div id="${id}" class="${first ? '' : 'hidden'}">${html}</div>`);
+        out.push(`<div id="${id}" class="civ-tab-body ${first ? '' : 'hidden'}">${html}</div>`);
         first = false;
     };
 
@@ -259,6 +265,7 @@ function civProfileBodies(data) {
         wrap('civ-arrests',   renderCivArrestsList(data.arrests || []));
         wrap('civ-citations', renderCivCitationsList(data.citations || []));
         wrap('civ-vehicles',  renderVehiclesList(data.vehicles || []));
+        if ((data.licences || []).length) wrap('civ-licences', renderLicences(data));
     }
     if (data.canSeeMedical) {
         wrap('civ-medical', renderCivMedical(data));
@@ -341,6 +348,10 @@ function renderCivilianProfile(data) {
                     ${hasWarrant ? '<span class="tag tag-red">ACTIVE WARRANT</span>' : ''}
                     ${flags.map(f => `<span class="tag tag-orange">${esc(f)}</span>`).join('')}
                 </div>
+                ${(data.aliases || []).length ? `
+                <div class="profile-aliases text-muted text-sm" style="margin-top:2px;">
+                    aka ${data.aliases.map(a => `<strong>${esc(a)}</strong>`).join(', ')}
+                </div>` : ''}
                 <div class="profile-meta">
                     <span>📅 DOB: ${data.dob || '—'}</span>
                     <span>⚧ ${data.gender || '—'}</span>
@@ -371,6 +382,11 @@ function renderCivilianProfile(data) {
                     <textarea class="textarea" id="civ-notes-input" style="min-height:140px;" placeholder="Add notes about this individual...">${esc(data.notes || '')}</textarea>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Known Aliases</label>
+                    <div class="form-hint" style="margin-bottom:8px;">Street names and false identities. These are searchable, so an officer can find someone by the name they gave.</div>
+                    <div id="civ-aliases-editor"></div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Flags / Alerts</label>
                     <div class="form-hint" style="margin-bottom:8px;">Flags appear on the profile banner. Click a preset or add a custom flag.</div>
                     <div id="civ-flags-editor"></div>
@@ -380,14 +396,17 @@ function renderCivilianProfile(data) {
         </div>`}`;
 
     // Init flag editor after HTML renders (works even though Notes tab is hidden initially)
-    setTimeout(() => initCivFlagsEditor(data.citizenid, flags), 0);
+    setTimeout(() => {
+        initCivFlagsEditor(data.citizenid, flags);
+        initCivAliasEditor(data.citizenid, data.aliases || []);
+    }, 0);
 }
 
 function showCivTab(el, id) {
     document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    ['civ-warrants','civ-arrests','civ-citations','civ-vehicles','civ-officer-notes'].forEach(t => {
-        document.getElementById(t)?.classList.toggle('hidden', t !== id);
+    document.querySelectorAll('.civ-tab-body').forEach(pane => {
+        pane.classList.toggle('hidden', pane.id !== id);
     });
 }
 
@@ -477,7 +496,11 @@ async function clearWarrantFromProfile(warrantId, citizenid) {
 
 async function saveCivNotes(citizenid) {
     const notes = document.getElementById('civ-notes-input')?.value.trim() || '';
-    const result = await nuiFetch('updateCivilianNotes', { citizenid, notes, flags: _civFlagsList || [] });
+    const result = await nuiFetch('updateCivilianNotes', {
+        citizenid, notes,
+        flags: _civFlagsList || [],
+        aliases: _civAliasList || [],
+    });
     if (result) {
         showToast('Notes Saved', '', 'success');
         // Refresh banner flags without full reload
@@ -518,7 +541,7 @@ function openMugshotModal(citizenid, currentImage) {
         async () => {
             const url = document.getElementById('mugshot-url')?.value.trim() || null;
             const ok = await nuiFetch('updateCivilianImage', { citizenid, image: url || null });
-            if (ok) {
+            if (res && res.ok) {
                 showToast('Photo Updated', '', 'success');
                 closeModal(modal);
                 openCivilianProfile(citizenid);
@@ -557,5 +580,140 @@ window._renderCivFlagsEditor   = _renderCivFlagsEditor;
 window._toggleCivFlag          = _toggleCivFlag;
 window._removeCivFlag          = _removeCivFlag;
 window._addCustomCivFlag       = _addCustomCivFlag;
+
+// ── Licences ────────────────────────────────────────────────────────────────
+// Qbox knows whether someone holds a licence. It has no idea whether that
+// licence is any good right now, which is the only thing an officer at a
+// traffic stop actually wants to know.
+const LICENCE_LOOK = {
+    valid:     ['Valid',     'tag-green'],
+    suspended: ['Suspended', 'tag-yellow'],
+    revoked:   ['Revoked',   'tag-red'],
+};
+
+function renderLicences(data) {
+    const list = data.licences || [];
+    if (!list.length) {
+        return `<div class="empty-state"><div class="empty-icon">🪪</div><div class="empty-title">No licence records</div></div>`;
+    }
+
+    return `
+        <div class="data-table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Licence</th><th>Status</th><th>Reason</th><th>Last changed</th><th></th></tr>
+                </thead>
+                <tbody>
+                    ${list.map(l => {
+                        const [label, tag] = LICENCE_LOOK[l.status] || LICENCE_LOOK.valid;
+
+                        // Not holding one at all is a different fact from
+                        // holding a bad one, and conflating them at a stop is
+                        // how someone gets charged with the wrong thing.
+                        const statusCell = !l.held
+                            ? '<span class="tag tag-gray">Not held</span>'
+                            : `<span class="tag ${tag}">${label}</span>`;
+
+                        const actions = !l.held ? '' : `
+                            ${l.status !== 'valid' ? `<button class="btn btn-ghost btn-sm" onclick="openLicenceModal('${esc(data.citizenid)}','${esc(l.key)}','${esc(l.label)}','valid')">Reinstate</button>` : ''}
+                            ${l.status !== 'suspended' ? `<button class="btn btn-ghost btn-sm" onclick="openLicenceModal('${esc(data.citizenid)}','${esc(l.key)}','${esc(l.label)}','suspended')">Suspend</button>` : ''}
+                            ${(l.status !== 'revoked' && data.canRevokeLicence) ? `<button class="btn btn-danger btn-sm" onclick="openLicenceModal('${esc(data.citizenid)}','${esc(l.key)}','${esc(l.label)}','revoked')">Revoke</button>` : ''}`;
+
+                        return `
+                            <tr>
+                                <td><strong>${esc(l.icon || '')} ${esc(l.label)}</strong></td>
+                                <td>${statusCell}</td>
+                                <td class="text-muted text-sm">${esc(l.reason || '—')}</td>
+                                <td class="text-muted text-sm">${l.changed_by_name ? esc(l.changed_by_name) + ' · ' + esc(fmtDate(l.changed_at)) : '—'}</td>
+                                <td style="text-align:right;white-space:nowrap;">${actions}</td>
+                            </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+function openLicenceModal(citizenid, type, label, action) {
+    const verb = action === 'valid' ? 'Reinstate' : action === 'revoked' ? 'Revoke' : 'Suspend';
+
+    createModal(`${verb} ${label} Licence`, `
+        <div class="form-group">
+            <label class="form-label">Reason${action === 'valid' ? ' (optional)' : ''}</label>
+            <textarea class="textarea" id="licence-reason" style="min-height:90px;"
+                      placeholder="${action === 'valid' ? 'Why is this being reinstated?' : 'This is shown to every officer who looks this person up.'}"></textarea>
+        </div>`,
+        async () => {
+            const reason = document.getElementById('licence-reason')?.value.trim() || '';
+            if (action !== 'valid' && !reason) {
+                showToast('Reason required', 'Say why the licence is being ' + action + '.', 'error');
+                return false;
+            }
+            const res = await nuiFetch('setLicenceStatus', { citizenid, type, status: action, reason });
+            if (res && res.ok) {
+                showToast(`Licence ${action === 'valid' ? 'reinstated' : action}`, label, 'success');
+                openCivilianProfile(citizenid);
+            } else {
+                // The server says why — a refused revoke and a missing reason are
+                // very different problems, and "failed" tells the officer neither.
+                showToast('Could not change licence', (res && res.error) || 'Unknown error', 'error');
+            }
+        });
+}
+
+// ── Aliases ─────────────────────────────────────────────────────────────────
+// Deliberately the same shape as the flags editor below it. Two adjacent
+// editors that behave differently is worse than a little repetition.
+let _civAliasList = [];
+
+function initCivAliasEditor(citizenid, initial) {
+    _civAliasList = [...(initial || [])];
+    _renderCivAliasEditor(citizenid);
+}
+
+function _renderCivAliasEditor(citizenid) {
+    const el = document.getElementById('civ-aliases-editor');
+    if (!el) return;
+    const cid = citizenid.replace(/'/g, "\\'");
+
+    el.innerHTML = `
+        <div class="flag-active-row">
+            ${_civAliasList.length === 0
+                ? '<span class="text-muted text-sm">No known aliases</span>'
+                : _civAliasList.map((a, i) => `
+                    <span class="flag-chip">
+                        ${esc(a)}
+                        <button onclick="_removeCivAlias('${cid}',${i})">×</button>
+                    </span>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+            <input class="input" id="civ-alias-input" placeholder="Add an alias and press Enter"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();_addCivAlias('${cid}')}">
+            <button class="btn btn-ghost btn-sm" onclick="_addCivAlias('${cid}')">Add</button>
+        </div>`;
+}
+
+function _addCivAlias(citizenid) {
+    const input = document.getElementById('civ-alias-input');
+    const value = (input?.value || '').trim();
+    if (!value) return;
+    if (_civAliasList.some(a => a.toLowerCase() === value.toLowerCase())) {
+        showToast('Already listed', value, 'warning');
+        return;
+    }
+    _civAliasList.push(value.slice(0, 60));
+    _renderCivAliasEditor(citizenid);
+}
+
+function _removeCivAlias(citizenid, index) {
+    _civAliasList.splice(index, 1);
+    _renderCivAliasEditor(citizenid);
+}
+
+window.renderLicences          = renderLicences;
+window.openLicenceModal        = openLicenceModal;
+window.initCivAliasEditor      = initCivAliasEditor;
+window._renderCivAliasEditor   = _renderCivAliasEditor;
+window._addCivAlias            = _addCivAlias;
+window._removeCivAlias         = _removeCivAlias;
 window.openMugshotModal        = openMugshotModal;
 window.previewMugshot          = previewMugshot;

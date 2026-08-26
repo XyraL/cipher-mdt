@@ -29,6 +29,11 @@ lib.callback.register('cipher-mdt:server:searchCivilians', function(source, quer
     if not query or #query < 2 then return {} end
 
     local search = '%' .. query .. '%'
+
+    -- Phone numbers get typed with dashes, without them, and with spaces.
+    -- Strip every non-alphanumeric character from both sides so any of those
+    -- spellings finds the same person.
+    local phoneSearch = '%' .. query:gsub('[^%w]', '') .. '%'
     local criminal = CanSeeCriminal(source)
 
     -- Warrant/arrest counts are only selected for departments allowed to see them.
@@ -37,13 +42,15 @@ lib.callback.register('cipher-mdt:server:searchCivilians', function(source, quer
             (SELECT COUNT(*) FROM mdt_arrests a WHERE a.citizenid = c.citizenid) as arrest_count]] or ''
 
     local results = MySQL.query.await(([[
-        SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.gender, c.phone, c.image%s
+        SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.gender, c.phone, c.image, c.aliases%s
         FROM mdt_civilians c
         WHERE CONCAT(c.firstname, ' ', c.lastname) LIKE ?
            OR c.dob LIKE ?
            OR c.citizenid LIKE ?
+           OR REPLACE(REPLACE(c.phone, '-', ''), ' ', '') LIKE ?
+           OR JSON_SEARCH(LOWER(c.aliases), 'one', LOWER(?)) IS NOT NULL
         LIMIT 20
-    ]]):format(counts), { search, search, search })
+    ]]):format(counts), { search, search, search, phoneSearch, search })
 
     -- If no local record, try pulling from QBCore players table
     if #results == 0 then
@@ -57,7 +64,7 @@ lib.callback.register('cipher-mdt:server:searchCivilians', function(source, quer
             SyncCivilian(row.citizenid)
         end
         results = MySQL.query.await(([[
-            SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.gender, c.phone, c.image%s
+            SELECT c.citizenid, c.firstname, c.lastname, c.dob, c.gender, c.phone, c.image, c.aliases%s
             FROM mdt_civilians c
             WHERE CONCAT(c.firstname, ' ', c.lastname) LIKE ?
                OR c.dob LIKE ?
@@ -104,7 +111,7 @@ lib.callback.register('cipher-mdt:server:getCivilianProfile', function(source, c
     else
         -- Non-police: strip criminal fields entirely rather than sending empties,
         -- and drop officer-authored notes/flags which are investigative.
-        civilian.notes, civilian.flags = nil, nil
+        civilian.notes, civilian.flags, civilian.aliases = nil, nil, nil
         civilian.warrants, civilian.arrests, civilian.citations, civilian.vehicles = nil, nil, nil, nil
     end
 
@@ -121,6 +128,22 @@ lib.callback.register('cipher-mdt:server:getCivilianProfile', function(source, c
             { citizenid }) or {}
     end
 
+    -- Aliases are stored as JSON; hand the panel a plain list. Police only —
+    -- the branch above strips the field for everyone else, so this must not
+    -- quietly put it back for a department that cannot see it.
+    if CanSeeCriminal(source) then
+        local ok, decoded = pcall(json.decode, civilian.aliases or '[]')
+        civilian.aliases = (ok and type(decoded) == 'table') and decoded or {}
+    end
+
+    -- Licence status is what an officer checks at a traffic stop, and it
+    -- carries the reason someone was suspended, so it is police-facing.
+    if CanSeeCriminal(source) and Config.Licences and Config.Licences.Enabled then
+        civilian.licences = exports['cipher-mdt']:GetLicences(citizenid)
+        civilian.canRevokeLicence = exports['cipher-mdt']:IsSupervisor(source)
+            or not Config.Licences.RevokeRequiresSupervisor
+    end
+
     civilian.canSeeCriminal = CanSeeCriminal(source)
     civilian.canSeeMedical  = CanSeeMedical(source)
     return civilian
@@ -134,12 +157,32 @@ lib.callback.register('cipher-mdt:server:updateCivilianImage', function(source, 
     return true
 end)
 
--- Update civilian notes or flags (officer-added info only)
+-- Update civilian notes, flags or aliases (officer-added info only)
 lib.callback.register('cipher-mdt:server:updateCivilianNotes', function(source, data)
-    -- Officer notes and flags are investigative -> police only.
+    -- Officer notes, flags and aliases are investigative -> police only.
     if not CanSeeCriminal(source) then return false end
-    MySQL.update.await('UPDATE mdt_civilians SET notes = ?, flags = ? WHERE citizenid = ?', {
-        data.notes, json.encode(data.flags), data.citizenid
+    if type(data) ~= 'table' or not data.citizenid then return false end
+
+    -- Aliases are searched, so they are cleaned on the way in rather than at
+    -- query time: trimmed, de-duplicated case-insensitively, length-capped and
+    -- held to a sane count, so one profile cannot bloat every search.
+    local aliases = {}
+    if type(data.aliases) == 'table' then
+        local seen = {}
+        for _, entry in ipairs(data.aliases) do
+            local name = tostring(entry):match('^%s*(.-)%s*$') or ''
+            name = name:sub(1, 60)
+            local key = name:lower()
+            if name ~= '' and not seen[key] then
+                seen[key] = true
+                aliases[#aliases + 1] = name
+                if #aliases >= 12 then break end
+            end
+        end
+    end
+
+    MySQL.update.await('UPDATE mdt_civilians SET notes = ?, flags = ?, aliases = ? WHERE citizenid = ?', {
+        data.notes, json.encode(data.flags or {}), json.encode(aliases), data.citizenid
     })
     return true
 end)
