@@ -331,7 +331,7 @@ function renderCivilianProfile(data) {
         <div class="profile-banner">
             <div class="mugshot-wrap" onclick="openMugshotModal('${data.citizenid}','${(data.image||'').replace(/'/g,"\\'")}')">
                 ${data.image
-                    ? `<img src="${data.image}" class="mugshot-img" alt="Mugshot">`
+                    ? `<img src="${esc(data.image)}" class="mugshot-img" alt="Mugshot">`
                     : '<span class="mugshot-placeholder">👤</span>'}
                 <div class="mugshot-edit-btn">📷</div>
             </div>
@@ -339,7 +339,7 @@ function renderCivilianProfile(data) {
                 <div class="profile-name">
                     ${esc(data.firstname)} ${esc(data.lastname)}
                     ${hasWarrant ? '<span class="tag tag-red">ACTIVE WARRANT</span>' : ''}
-                    ${flags.map(f => `<span class="tag tag-orange">${f}</span>`).join('')}
+                    ${flags.map(f => `<span class="tag tag-orange">${esc(f)}</span>`).join('')}
                 </div>
                 <div class="profile-meta">
                     <span>📅 DOB: ${data.dob || '—'}</span>
@@ -497,7 +497,7 @@ async function saveCivNotes(citizenid) {
 
 // ── Mugshot Upload ────────────────────────────────────────────────────────
 function openMugshotModal(citizenid, currentImage) {
-    const escaped = (currentImage || '').replace(/"/g, '&quot;');
+    const escaped = esc(currentImage || '');
     const modal = createModal('Update Civilian Photo', `
         <div class="form-group">
             <label class="form-label">Image URL</label>
@@ -537,7 +537,7 @@ function previewMugshot() {
         return;
     }
     el.innerHTML = `
-        <img src="${url}" class="mugshot-modal-preview" alt="Preview"
+        <img src="${esc(url)}" class="mugshot-modal-preview" alt="Preview"
              onerror="document.getElementById('mugshot-preview').innerHTML='<span style=\\'color:var(--red);font-size:12px;\\'>Invalid URL — image could not load</span>'">`;
 }
 

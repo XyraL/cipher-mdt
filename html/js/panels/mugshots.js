@@ -58,7 +58,7 @@ function renderMugshotGrid(items) {
             : '';
         return `<div class="mugshot-card" onclick="switchTab('civilians');setTimeout(function(){openCivilianProfile('${c.citizenid}')},80)">
             <div class="mugshot-img-wrap">
-                <img src="${c.image}" alt="${name}" class="mugshot-img"
+                <img src="${esc(c.image)}" alt="${esc(name)}" class="mugshot-img"
                      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="mugshot-fallback" style="display:none">👤</div>
             </div>
