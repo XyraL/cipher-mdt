@@ -91,10 +91,25 @@ RegisterNUICallback('setWaypoint', function(data, cb)
     cb({ ok = x ~= nil and y ~= nil })
 end)
 
--- Forward all data requests from NUI to server callbacks
+-- Forward all data requests from NUI to server callbacks.
+--
+-- `false` is passed straight through instead of being folded into `{}`.
+--
+-- It used to send `result or {}`, and an empty object is truthy in JS, so every
+-- `if (result)` in the panel read a refusal as a success. A denied action gave
+-- a green toast; creating a CAD call you had no permission for reported
+-- "undefined dispatched".
+--
+-- nil still becomes `{}` — plenty of callbacks return nothing on purpose and
+-- the panel expects an object from those.
 RegisterNUICallback('request', function(data, cb)
     local result = lib.callback.await('cipher-mdt:server:' .. data.endpoint, false, data.payload)
-    cb(result or {})
+
+    if result == false then
+        cb(false)
+    else
+        cb(result or {})
+    end
 end)
 
 -- Alert: warrant issued
