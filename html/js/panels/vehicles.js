@@ -127,7 +127,7 @@ async function lookupPlate() {
                     <div class="info-grid">
                         <div class="info-row">
                             <div class="info-key">Model</div>
-                            <div class="info-val">${data.vehicle.label || data.vehicle.model || '—'}</div>
+                            <div class="info-val">${esc(data.vehicle.label || data.vehicle.model || '—')}</div>
                         </div>
                         <div class="info-row">
                             <div class="info-key">Status</div>
@@ -135,7 +135,7 @@ async function lookupPlate() {
                         </div>
                         <div class="info-row">
                             <div class="info-key">Garage</div>
-                            <div class="info-val">${data.vehicle.garage || '—'}</div>
+                            <div class="info-val">${esc(data.vehicle.garage || '—')}</div>
                         </div>
                         <div class="info-row">
                             <div class="info-key">Fuel Level</div>
@@ -154,7 +154,7 @@ async function lookupPlate() {
                         <span>📡</span>
                         <div>
                             <strong>Active BOLO on this vehicle</strong><br>
-                            <span style="font-size:12px;">${data.bolo.description}</span><br>
+                            <span style="font-size:12px;">${esc(data.bolo.description)}</span><br>
                             <span style="font-size:11px;opacity:.7;">Issued by ${data.bolo.issued_by_name}</span>
                         </div>
                     </div>` : ''}
@@ -176,7 +176,7 @@ async function lookupPlate() {
                     <div class="info-grid">
                         <div class="info-row">
                             <div class="info-key">Name</div>
-                            <div class="info-val font-bold">${data.owner.name}</div>
+                            <div class="info-val font-bold">${esc(data.owner.name)}</div>
                         </div>
                         <div class="info-row">
                             <div class="info-key">Date of Birth</div>

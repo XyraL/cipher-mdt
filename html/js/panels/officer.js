@@ -203,7 +203,7 @@ function renderDashboard() {
                     <div class="call-type">${c.call_type || c.type}</div>
                     <div class="call-location">📍 ${esc(c.location)}</div>
                     <div class="call-units">
-                        ${(c.units||[]).map(u=>`<span class="call-unit-chip">${u.name.split(' ')[0]}</span>`).join('')}
+                        ${(c.units||[]).map(u=>`<span class="call-unit-chip">${esc(u.name.split(' ')[0])}</span>`).join('')}
                         ${(!c.units||c.units.length===0)?'<span class="text-xs text-muted">No units assigned</span>':''}
                     </div>
                 </div>`).join('');

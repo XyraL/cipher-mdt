@@ -65,7 +65,7 @@ function latLngToWorld(latlng) {
 function unitIcon(unit) {
     const color = jobColor(unit.job);
     const label = unit.badge && unit.badge !== 'N/A'
-        ? `${(unit.name || '').split(' ')[0]} ${unit.badge}`
+        ? `${esc((unit.name || '').split(' ')[0])} ${unit.badge}`
         : (unit.name || 'Unit').split(' ')[0];
 
     // The arrow points along the unit's heading; GTA headings run anticlockwise
@@ -102,7 +102,7 @@ function unitPopup(u) {
     return `
         <div class="cmap-pop">
             <div class="cmap-pop-name" style="color:${jobColor(u.job)};">${esc(u.name || 'Unit')}</div>
-            <div class="cmap-pop-meta">${(u.department || u.job || '').toUpperCase()} · Badge ${u.badge || '—'}</div>
+            <div class="cmap-pop-meta">${esc((u.department || u.job || '').toUpperCase())} · Badge ${u.badge || '—'}</div>
             ${u.status ? `<div class="cmap-pop-meta">Status ${u.status}</div>` : ''}
             <div class="cmap-pop-actions">
                 <button onclick="mapFollow('${u.citizenid}')">Follow</button>
@@ -357,7 +357,7 @@ function renderUnitList() {
                     <div class="cmap-unit-row-sub">#${u.badge || '—'}${u.status ? ' · ' + u.status : ''}</div>
                 </div>
                 <span class="cmap-unit-row-dept" style="color:${color};">
-                    ${(u.department || u.job || '').toUpperCase()}
+                    ${esc((u.department || u.job || '').toUpperCase())}
                 </span>
             </div>`;
     }).join('');

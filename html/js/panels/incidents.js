@@ -378,7 +378,7 @@ function createPersonLinker(containerId, type = 'civilian') {
                 dropdown.innerHTML = results.slice(0, 8).map(r => `
                     <div class="person-linker-result" onclick="linkPerson('${containerId}','${r.citizenid}','${(r.firstname ? r.firstname + ' ' + r.lastname : r.name).replace(/'/g,"\\'")}','${type}')">
                         <div>
-                            <div class="person-linker-result-name">${r.firstname ? r.firstname + ' ' + r.lastname : r.name}</div>
+                            <div class="person-linker-result-name">${esc(r.firstname ? r.firstname + ' ' + r.lastname : r.name)}</div>
                             <div class="person-linker-result-meta">${isCiv ? (r.dob || r.citizenid) : (r.grade + ' · Badge #' + r.badge)}</div>
                         </div>
                         <span class="tag ${isCiv ? 'tag-blue' : 'tag-purple'}">${isCiv ? 'Civilian' : 'Officer'}</span>

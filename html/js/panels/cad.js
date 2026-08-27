@@ -123,7 +123,7 @@ function renderCallList(calls) {
                 <span class="elapsed-chip ${elapsedClass(mins)}" data-created="${c.created_at}">⏱ ${formatElapsed(mins)}</span>
             </div>
             <div class="call-units">
-                ${(c.units||[]).map(u=>`<span class="call-unit-chip">${u.name.split(' ')[0]}</span>`).join('')}
+                ${(c.units||[]).map(u=>`<span class="call-unit-chip">${esc(u.name.split(' ')[0])}</span>`).join('')}
                 ${(!c.units||c.units.length===0)?'<span class="text-xs text-muted">No units</span>':''}
             </div>
         </div>`;
@@ -202,8 +202,8 @@ function openCallDetail(callId) {
                         ? '<div class="text-muted text-sm">No notes yet</div>'
                         : call.notes.map(n => `
                             <div style="padding:6px 0;border-bottom:1px solid var(--border);">
-                                <div class="text-xs text-muted font-mono">[${n.time}] ${n.author}</div>
-                                <div style="font-size:12.5px;margin-top:2px;">${n.text}</div>
+                                <div class="text-xs text-muted font-mono">[${n.time}] ${esc(n.author)}</div>
+                                <div style="font-size:12.5px;margin-top:2px;">${esc(n.text)}</div>
                             </div>`).join('')}
                 </div>
             </div>

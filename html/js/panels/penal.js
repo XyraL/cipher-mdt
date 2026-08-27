@@ -249,7 +249,7 @@ function _penalCodeModalBody(code = {}) {
         </div>
         <div class="form-group">
             <label class="form-label">Charge Name</label>
-            <input class="input" id="pc-name" value="${(code.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. Speeding">
+            <input class="input" id="pc-name" value="${esc(code.name || '')}" placeholder="e.g. Speeding">
         </div>
         <div class="form-row">
             <div class="form-group" style="flex:1;">
