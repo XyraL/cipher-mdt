@@ -65,11 +65,25 @@ for (const file of files) {
     // Only lines that are building markup.
     if (!line.includes('${')) return;
 
+    // Whether a value needs escaping depends on where it is being written, and
+    // "somewhere on this line" is not good enough: minified files put a dozen
+    // statements on one line, so a line can contain both sinks at once.
+    //
+    // So look BACKWARDS from each match for the nearest of the two. textContent
+    // does not parse HTML — tags assigned to it appear on screen as text, which
+    // is the entire point — so a value headed there needs no escaping.
+    const sinkFor = (index) => {
+      const before = line.slice(0, index);
+      return before.lastIndexOf('.textContent') > before.lastIndexOf('.innerHTML')
+        ? 'text' : 'html';
+    };
+
     const attrRanges = [];
     for (const m of line.matchAll(EVENT_ATTR)) attrRanges.push([m.index, m.index + m[0].length]);
 
     for (const m of line.matchAll(RE)) {
       if (ALLOW.some((a) => a.match === m[0])) continue;
+      if (sinkFor(m.index) === 'text') continue;
 
       const body = m[0].slice(2, -1);   // inside the ${ }
 
