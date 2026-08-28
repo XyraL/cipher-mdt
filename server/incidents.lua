@@ -71,6 +71,8 @@ lib.callback.register('cipher-mdt:server:getIncident', function(source, id)
     incident.linked_arrests = incident.linked_arrests and json.decode(incident.linked_arrests) or {}
     incident.linked_citations = incident.linked_citations and json.decode(incident.linked_citations) or {}
     incident.tags = incident.tags and json.decode(incident.tags) or {}
+    incident.evidence = MySQL.query.await(
+        'SELECT * FROM mdt_evidence WHERE incident_id = ? ORDER BY created_at ASC', { id }) or {}
     return incident
 end)
 
@@ -190,6 +192,95 @@ lib.callback.register('cipher-mdt:server:setCaseNumber', function(source, data)
     local cn = tostring(data.caseNumber):gsub('[^%w%-]', ''):sub(1, 50)
     MySQL.update.await('UPDATE mdt_incidents SET case_number = ? WHERE id = ?', { cn ~= '' and cn or nil, data.incidentId })
     return true
+end)
+
+-- Search across every report an officer may see: case number, title, the
+-- narrative itself, and who wrote it. Draft privacy holds here exactly as it
+-- does in the list — someone else's unfinished report is not findable either.
+lib.callback.register('cipher-mdt:server:searchIncidents', function(source, query)
+    if not HasPanel(source, 'incidents') then return nil end
+    query = tostring(query or '')
+    if #query < 2 then return {} end
+
+    local officer = exports['cipher-mdt']:GetOfficerInfo(source)
+    local like = '%' .. query .. '%'
+
+    local results = MySQL.query.await([[
+        SELECT * FROM mdt_incidents
+        WHERE (status != 'draft' OR created_by = ?)
+          AND (case_number LIKE ? OR title LIKE ? OR narrative LIKE ? OR created_by_name LIKE ?)
+        ORDER BY created_at DESC
+        LIMIT 50
+    ]], { officer.citizenid, like, like, like, like })
+
+    for _, i in ipairs(results) do
+        i.involved_civilians = i.involved_civilians and json.decode(i.involved_civilians) or {}
+        i.involved_officers = i.involved_officers and json.decode(i.involved_officers) or {}
+        i.linked_arrests = i.linked_arrests and json.decode(i.linked_arrests) or {}
+        i.linked_citations = i.linked_citations and json.decode(i.linked_citations) or {}
+        i.tags = i.tags and json.decode(i.tags) or {}
+    end
+    return results
+end)
+
+-- ── Evidence ─────────────────────────────────────────────────────────────────
+-- Photos, items and notes attached to a report, each stamped with who logged
+-- it and when. Entries are meant to be append-mostly: the logger gets a short
+-- window to fix a typo, after that only a supervisor can remove one — an
+-- evidence log everyone can quietly edit later is not worth keeping.
+
+local EVIDENCE_KINDS = { photo = true, item = true, note = true }
+local EVIDENCE_EDIT_WINDOW = 15 * 60
+
+lib.callback.register('cipher-mdt:server:addEvidence', function(source, data)
+    if not HasPanel(source, 'incidents') then return { ok = false, error = 'Not authorised' } end
+    if type(data) ~= 'table' or not data.incidentId then return { ok = false, error = 'Missing report' } end
+    if not EVIDENCE_KINDS[data.kind] then return { ok = false, error = 'Unknown evidence type' } end
+
+    local label = tostring(data.label or ''):sub(1, 120)
+    if label == '' then return { ok = false, error = 'A label is required' } end
+
+    local officer = exports['cipher-mdt']:GetOfficerInfo(source)
+    local incident = MySQL.single.await(
+        'SELECT id, status, created_by, case_number FROM mdt_incidents WHERE id = ?', { data.incidentId })
+    if not incident then return { ok = false, error = 'No such report' } end
+    if incident.status == 'draft' and incident.created_by ~= officer.citizenid then
+        return { ok = false, error = 'No such report' }
+    end
+
+    local id = MySQL.insert.await([[
+        INSERT INTO mdt_evidence (incident_id, kind, label, detail, photo, logged_by, logged_by_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ]], {
+        data.incidentId, data.kind, label,
+        data.detail and tostring(data.detail):sub(1, 1000) or nil,
+        data.kind == 'photo' and data.photo and tostring(data.photo):sub(1, 500) or nil,
+        officer.citizenid, officer.name,
+    })
+
+    exports['cipher-mdt']:AuditLog('Evidence Logged', officer.name,
+        ('%s "%s" on %s'):format(data.kind, label, incident.case_number or ('#' .. incident.id)))
+    return { ok = true, id = id }
+end)
+
+lib.callback.register('cipher-mdt:server:deleteEvidence', function(source, data)
+    if not HasPanel(source, 'incidents') then return { ok = false, error = 'Not authorised' } end
+    if type(data) ~= 'table' or not data.id then return { ok = false, error = 'Missing entry' } end
+
+    local officer = exports['cipher-mdt']:GetOfficerInfo(source)
+    local row = MySQL.single.await(
+        'SELECT id, label, logged_by, UNIX_TIMESTAMP(created_at) AS at FROM mdt_evidence WHERE id = ?', { data.id })
+    if not row then return { ok = false, error = 'Already gone' } end
+
+    local own = row.logged_by == officer.citizenid
+    local fresh = (os.time() - (row.at or 0)) <= EVIDENCE_EDIT_WINDOW
+    if not ((own and fresh) or exports['cipher-mdt']:IsSupervisor(source)) then
+        return { ok = false, error = 'Only within 15 minutes of logging it, or a supervisor' }
+    end
+
+    MySQL.query.await('DELETE FROM mdt_evidence WHERE id = ?', { data.id })
+    exports['cipher-mdt']:AuditLog('Evidence Removed', officer.name, ('"%s" (#%d)'):format(row.label, row.id))
+    return { ok = true }
 end)
 
 lib.callback.register('cipher-mdt:server:getIncidentsByCase', function(source, caseNumber)

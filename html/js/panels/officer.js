@@ -97,6 +97,85 @@ function loadDashDepartmentStats() {
     }
 }
 
+// The stats card. Totals and the daily chart for every officer; the
+// per-officer leaderboard only arrives for supervisors, and the server decides
+// that — the panel just renders whatever it was given.
+function loadDeptStats(range) {
+    ['7', '30'].forEach(r => {
+        document.getElementById('dash-range-' + r)?.classList.toggle('active', String(range) === r);
+    });
+
+    nuiFetch('getDepartmentStats', { range }).then(stats => {
+        const el = document.getElementById('sup-stats-body');
+        if (!el || !stats) return;
+
+        const rankClass = i => ['gold', 'silver', 'bronze'][i] || '';
+
+        // The chart is plain divs. The shape of a week is the point — spikes
+        // and dead days — not exact values, which sit right above it anyway.
+        const series = stats.series || [];
+        const peak = Math.max(1, ...series.map(d => d.arrests + d.citations));
+        const chart = series.map(d => {
+            const total = d.arrests + d.citations;
+            const h = Math.round((total / peak) * 46);
+            const day = new Date(d.day + 'T00:00:00');
+            const label = series.length <= 7
+                ? day.toLocaleDateString('en-US', { weekday: 'short' })
+                : (day.getDate() === 1 || d === series[0] ? day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+            return `
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;" title="${d.day}: ${d.arrests} arrests, ${d.citations} citations">
+                    <div style="width:70%;max-width:26px;height:${Math.max(2, h)}px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,var(--accent),var(--accent-2));opacity:${total ? 1 : .18};"></div>
+                    <div style="font-size:8.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;">${label}</div>
+                </div>`;
+        }).join('');
+
+        el.innerHTML = `
+            <div class="sup-stat-row">
+                <div class="sup-stat-cell">
+                    <div class="sup-stat-num" style="color:var(--red);">${stats.arrests}</div>
+                    <div class="sup-stat-lbl">Arrests</div>
+                    <div class="sup-stat-sub">${stats.arrests_today} today</div>
+                </div>
+                <div class="sup-stat-cell">
+                    <div class="sup-stat-num" style="color:var(--accent-2);">${stats.citations}</div>
+                    <div class="sup-stat-lbl">Citations</div>
+                    <div class="sup-stat-sub">${stats.citations_today} today</div>
+                </div>
+                <div class="sup-stat-cell">
+                    <div class="sup-stat-num" style="color:var(--purple);">${stats.incidents}</div>
+                    <div class="sup-stat-lbl">Reports</div>
+                    <div class="sup-stat-sub">last ${stats.range} days</div>
+                </div>
+                <div class="sup-stat-cell">
+                    <div class="sup-stat-num" style="color:var(--yellow);">${stats.warrants_active}</div>
+                    <div class="sup-stat-lbl">Warrants</div>
+                    <div class="sup-stat-sub">active now</div>
+                </div>
+                <div class="sup-stat-cell">
+                    <div class="sup-stat-num" style="color:var(--green);">${dollarFmt(stats.fines)}</div>
+                    <div class="sup-stat-lbl">Fines Issued</div>
+                    <div class="sup-stat-sub">arrests + citations</div>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:flex-end;gap:2px;height:62px;padding:6px 2px 0;margin-bottom:12px;">${chart}</div>
+
+            ${stats.isSupervisor ? (stats.top_officers && stats.top_officers.length ? `
+            <div style="font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">
+                🏆 Top Arresting Officers <span class="tag tag-purple" style="font-size:9px;margin-left:4px;">Supervisor</span>
+            </div>
+            ${stats.top_officers.map((o, i) => `
+                <div class="top-officer-row">
+                    <div class="top-officer-rank ${rankClass(i)}">${i + 1}</div>
+                    <div style="flex:1;font-size:12.5px;font-weight:600;">${esc(o.officer_name)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${o.arrest_count} arrest${o.arrest_count !== 1 ? 's' : ''}</div>
+                    <div style="width:80px;background:var(--bg-base);border-radius:4px;height:5px;overflow:hidden;margin-left:8px;">
+                        <div style="background:var(--accent);height:100%;width:${Math.min(100, Math.round(o.arrest_count / stats.top_officers[0].arrest_count * 100))}%;border-radius:4px;"></div>
+                    </div>
+                </div>`).join('')}` : '<div class="text-muted text-sm">No arrests in this range</div>') : ''}`;
+    });
+}
+
 function renderDashboard() {
     const panel = document.getElementById('tab-dashboard');
     panel.innerHTML = `
@@ -117,14 +196,17 @@ function renderDashboard() {
                 ${dashStatCards()}
             </div>
 
-            ${MDT.officer && MDT.officer.isSupervisor && hasPanel('arrests') ? `
+            ${hasPanel('arrests') ? `
             <div class="card" id="dash-sup-stats" style="margin-bottom:16px;">
                 <div class="card-header">
                     <div class="card-title">
                         <div class="card-title-icon" style="background:var(--purple-glow);color:var(--purple);">📊</div>
-                        Department Statistics <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;">Last 7 days</span>
+                        Department Statistics
                     </div>
-                    <span class="tag tag-purple" style="font-size:10px;">Supervisor</span>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-ghost btn-sm active" id="dash-range-7" onclick="loadDeptStats(7)">7 days</button>
+                        <button class="btn btn-ghost btn-sm" id="dash-range-30" onclick="loadDeptStats(30)">30 days</button>
+                    </div>
                 </div>
                 <div id="sup-stats-body">${skeletonLines(3)}</div>
             </div>` : ''}
@@ -245,45 +327,8 @@ function renderDashboard() {
         if (roster) document.getElementById('stat-officers').textContent = roster.length;
     });
 
-    // Supervisor stats — the arrest/citation breakdown only means something for police.
-    if (MDT.officer && MDT.officer.isSupervisor && hasPanel('arrests')) {
-        nuiFetch('getDepartmentStats').then(stats => {
-            const el = document.getElementById('sup-stats-body');
-            if (!el || !stats) return;
-            const rankClass = i => ['gold','silver','bronze'][i] || '';
-            el.innerHTML = `
-                <div class="sup-stat-row">
-                    <div class="sup-stat-cell">
-                        <div class="sup-stat-num" style="color:var(--red);">${stats.arrests_week}</div>
-                        <div class="sup-stat-lbl">Arrests</div>
-                        <div class="sup-stat-sub">${stats.arrests_today} today</div>
-                    </div>
-                    <div class="sup-stat-cell">
-                        <div class="sup-stat-num" style="color:var(--accent-2);">${stats.citations_week}</div>
-                        <div class="sup-stat-lbl">Citations</div>
-                        <div class="sup-stat-sub">${stats.citations_today} today</div>
-                    </div>
-                    <div class="sup-stat-cell">
-                        <div class="sup-stat-num" style="color:var(--green);">${dollarFmt(stats.fines_week)}</div>
-                        <div class="sup-stat-lbl">Fines Issued</div>
-                        <div class="sup-stat-sub">arrests + citations</div>
-                    </div>
-                </div>
-                ${stats.top_officers && stats.top_officers.length ? `
-                <div style="font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">
-                    🏆 Top Arresting Officers
-                </div>
-                ${stats.top_officers.map((o, i) => `
-                    <div class="top-officer-row">
-                        <div class="top-officer-rank ${rankClass(i)}">${i + 1}</div>
-                        <div style="flex:1;font-size:12.5px;font-weight:600;">${esc(o.officer_name)}</div>
-                        <div style="font-size:11px;color:var(--text-muted);">${o.arrest_count} arrest${o.arrest_count !== 1 ? 's' : ''}</div>
-                        <div style="width:80px;background:var(--bg-base);border-radius:4px;height:5px;overflow:hidden;margin-left:8px;">
-                            <div style="background:var(--accent);height:100%;width:${Math.min(100, Math.round(o.arrest_count / stats.top_officers[0].arrest_count * 100))}%;border-radius:4px;"></div>
-                        </div>
-                    </div>`).join('')}` : '<div class="text-muted text-sm">No arrests this week</div>'}`;
-        });
-    }
+    // Department stats — arrests and citations only mean something for police.
+    if (hasPanel('arrests')) loadDeptStats(7);
 
     // Department activity feed — merge recent arrests + citations (police only)
     if (!hasPanel('arrests')) {
@@ -552,6 +597,7 @@ function clearAuditSearch() {
     runAuditSearch();
 }
 
+window.loadDeptStats = loadDeptStats;
 window.renderDashboard   = renderDashboard;
 window.loadRoster        = loadRoster;
 window.openProfileEditor = openProfileEditor;

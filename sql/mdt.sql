@@ -23,6 +23,8 @@
 -- ALTER TABLE mdt_warrants  ADD COLUMN IF NOT EXISTS expiry_alert_sent TINYINT(1)  DEFAULT 0;
 -- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS case_number       VARCHAR(50)  DEFAULT NULL;
 -- CREATE TABLE IF NOT EXISTS mdt_shift_log ... (see below)
+-- v1.6 → v2.0
+-- CREATE TABLE IF NOT EXISTS mdt_evidence ... (see below)
 -- v1.5 → v1.6
 -- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS status      VARCHAR(20)  NOT NULL DEFAULT 'open';
 -- ALTER TABLE mdt_incidents ADD COLUMN IF NOT EXISTS location    VARCHAR(255) DEFAULT NULL;
@@ -450,4 +452,22 @@ CREATE TABLE IF NOT EXISTS `mdt_licences` (
     `changed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_citizen_type` (`citizenid`, `type`),
     KEY `idx_citizenid` (`citizenid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Evidence attached to incident reports: photos, items and notes, each stamped
+-- with who logged it and when. Rows go with their report — the foreign key
+-- cascades on delete.
+CREATE TABLE IF NOT EXISTS `mdt_evidence` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `incident_id` INT NOT NULL,
+    `kind` VARCHAR(10) NOT NULL,
+    `label` VARCHAR(120) NOT NULL,
+    `detail` TEXT DEFAULT NULL,
+    `photo` TEXT DEFAULT NULL,
+    `logged_by` VARCHAR(50) NOT NULL,
+    `logged_by_name` VARCHAR(100) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_incident` (`incident_id`),
+    CONSTRAINT `fk_evidence_incident` FOREIGN KEY (`incident_id`)
+        REFERENCES `mdt_incidents` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

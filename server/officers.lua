@@ -248,36 +248,78 @@ lib.callback.register('cipher-mdt:server:setUnitStatus', function(source, status
     return true
 end)
 
--- ─── Department Statistics (supervisor only) ────────────────────────────────
+-- ─── Department Statistics ───────────────────────────────────────────────────
+-- Totals and a per-day series go to every officer; the per-officer leaderboard
+-- stays with supervisors, because "who arrested the least this week" pinned on
+-- everyone's dashboard is a drama machine.
 
-lib.callback.register('cipher-mdt:server:getDepartmentStats', function(source)
+lib.callback.register('cipher-mdt:server:getDepartmentStats', function(source, data)
     if not HasPanel(source, 'arrests') then return nil end
     local officer = GetOfficerInfo(source)
-    if not officer or officer.grade < Dept.SupervisorGrade(officer.job) then return nil end
+    if not officer then return nil end
 
-    local arrests_week   = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_arrests   WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0
-    local citations_week = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_citations WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0
-    local arrests_today  = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_arrests   WHERE DATE(created_at) = CURDATE()") or 0
-    local citations_today= MySQL.scalar.await("SELECT COUNT(*) FROM mdt_citations WHERE DATE(created_at) = CURDATE()") or 0
+    local isSupervisor = officer.grade >= Dept.SupervisorGrade(officer.job)
 
-    local fine_arrests   = MySQL.scalar.await("SELECT COALESCE(SUM(fine),0) FROM mdt_arrests   WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0
-    local fine_citations = MySQL.scalar.await("SELECT COALESCE(SUM(fine),0) FROM mdt_citations WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or 0
+    -- 7 or 30 days; anything else falls back to 7.
+    local days = (type(data) == 'table' and tonumber(data.range) == 30) and 30 or 7
 
-    local top_officers = MySQL.query.await([[
-        SELECT officer_name, COUNT(*) as arrest_count
-        FROM mdt_arrests
-        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        GROUP BY officer_citizenid, officer_name
-        ORDER BY arrest_count DESC
-        LIMIT 5
-    ]], {})
+    local function countSince(tbl)
+        return MySQL.scalar.await(
+            ('SELECT COUNT(*) FROM %s WHERE created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)'):format(tbl, days)) or 0
+    end
 
-    return {
-        arrests_week   = arrests_week,
-        citations_week = citations_week,
-        arrests_today  = arrests_today,
-        citations_today= citations_today,
-        fines_week     = fine_arrests + fine_citations,
-        top_officers   = top_officers,
+    local fine_arrests = MySQL.scalar.await(
+        ('SELECT COALESCE(SUM(fine),0) FROM mdt_arrests WHERE created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)'):format(days)) or 0
+    local fine_citations = MySQL.scalar.await(
+        ('SELECT COALESCE(SUM(fine),0) FROM mdt_citations WHERE created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)'):format(days)) or 0
+
+    -- One row per day per table, merged into a dense series here — a day with
+    -- nothing still appears, because a gap in a bar chart IS the information.
+    local function daily(tbl)
+        local rows = MySQL.query.await(
+            ('SELECT DATE(created_at) AS d, COUNT(*) AS n FROM %s WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL %d DAY) GROUP BY DATE(created_at)'):format(tbl, days - 1)) or {}
+        local byDay = {}
+        for _, r in ipairs(rows) do byDay[tostring(r.d):sub(1, 10)] = r.n end
+        return byDay
+    end
+
+    local arrestsBy = daily('mdt_arrests')
+    local citationsBy = daily('mdt_citations')
+
+    local series = {}
+    for i = days - 1, 0, -1 do
+        local day = os.date('%Y-%m-%d', os.time() - i * 86400)
+        series[#series + 1] = {
+            day = day,
+            arrests = arrestsBy[day] or 0,
+            citations = citationsBy[day] or 0,
+        }
+    end
+
+    local stats = {
+        range           = days,
+        arrests         = countSince('mdt_arrests'),
+        citations       = countSince('mdt_citations'),
+        incidents       = countSince('mdt_incidents'),
+        arrests_today   = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_arrests   WHERE DATE(created_at) = CURDATE()") or 0,
+        citations_today = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_citations WHERE DATE(created_at) = CURDATE()") or 0,
+        warrants_active = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_warrants WHERE status = 'active'") or 0,
+        bolos_active    = MySQL.scalar.await("SELECT COUNT(*) FROM mdt_bolos WHERE active = 1") or 0,
+        fines           = fine_arrests + fine_citations,
+        series          = series,
+        isSupervisor    = isSupervisor,
     }
+
+    if isSupervisor then
+        stats.top_officers = MySQL.query.await(([[
+            SELECT officer_name, COUNT(*) as arrest_count
+            FROM mdt_arrests
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
+            GROUP BY officer_citizenid, officer_name
+            ORDER BY arrest_count DESC
+            LIMIT 5
+        ]]):format(days), {})
+    end
+
+    return stats
 end)

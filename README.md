@@ -47,6 +47,9 @@
 
 ### Police
 
+- **Report search** — one box that searches case numbers, titles, narratives and officers across every report
+- **Evidence** — photos, items and notes logged on a report with who logged what and when. Your own entries can be removed for 15 minutes; after that it takes a supervisor
+- **Department stats** — arrests, citations, reports, active warrants and fines on the dashboard with a daily activity chart, switchable between 7 and 30 days. Every officer sees the numbers; the top-officers list stays with supervisors
 - **Licence status** — Driver, weapon and business licences on the civilian profile, with suspend, revoke and reinstate. Qbox only tracks whether someone *holds* a licence; the MDT adds the state it is in, who changed it, and why. Suspending also flips the Qbox flag so other resources agree, and it will never hand back a licence that was never held. Revoking is supervisor-only by default
 - **Aliases** — Record street names and false identities, and find people by them. Searching by phone number works too, with or without dashes
 - **Partial plate search** — An officer who caught three characters of a plate gets a shortlist instead of nothing. Plates with no registration still report an outstanding BOLO
@@ -106,6 +109,9 @@ ensure cipher-mdt
 Run `sql/mdt.sql` against your database. It uses `CREATE TABLE IF NOT EXISTS` throughout, so it is safe to re-run.
 
 If you are **upgrading from a previous version**, run only the commented `ALTER TABLE` lines at the top of the SQL file that match your current version.
+
+> **Upgrading to 2.0:** run the `v1.6 → v2.0` block at the top of `sql/mdt.sql`
+> (one new table, `mdt_evidence`). Nothing existing is touched.
 
 > **Upgrading to 1.6:** run the `v1.5 → v1.6` block at the top of `sql/mdt.sql`.
 > It adds `mdt_licences` and four columns, and touches nothing existing. Licence

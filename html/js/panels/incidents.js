@@ -84,6 +84,8 @@ function loadIncidents(filter = 'all') {
                 <button class="btn btn-ghost btn-sm ${filter==='drafts'?'active':''}" onclick="loadIncidents('drafts')">Drafts</button>
                 <button class="btn btn-ghost btn-sm ${filter==='open'?'active':''}" onclick="loadIncidents('open')">Open</button>
                 <button class="btn btn-ghost btn-sm ${filter==='review'?'active':''}" onclick="loadIncidents('review')">Review</button>
+                <input class="input input-sm" id="inc-search" placeholder="🔍 Search reports…" style="width:190px;"
+                       oninput="queueIncidentSearch()">
                 <button class="btn btn-primary btn-sm" onclick="openNewIncidentModal()">+ New Report</button>
             </div>
         </div>
@@ -103,30 +105,66 @@ function loadIncidents(filter = 'all') {
             body.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No incident reports found</div></div>';
             return;
         }
-        body.innerHTML = incidents.map(i => {
-            const sev = SEVERITY_LABELS[i.severity] || null;
-            return `
-            <div class="card mb-2" onclick="openIncidentDetail(${i.id})" style="cursor:pointer;">
-                <div class="card-header">
-                    <div class="card-title">
-                        <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📋</div>
-                        <span class="font-bold">${esc(i.title)}</span>
-                        ${sev ? `<span class="tag ${esc(sev.tag)}" style="margin-left:8px;">${esc(sev.label)}</span>` : ''}
-                        ${statusTag(i.status)}
-                    </div>
-                    <div style="font-size:11px;color:var(--text-muted);">
-                        ${i.case_number ? esc(i.case_number) : '#' + i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}
-                    </div>
-                </div>
-                <div style="display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-muted);">
-                    <span>👮 ${(i.involved_officers||[]).length} officer(s)</span>
-                    <span>👤 ${(i.involved_civilians||[]).length} civilian(s)</span>
-                    <span style="margin-left:auto;" class="font-mono">${fmtDateShort(i.created_at)}</span>
-                </div>
-                ${renderRecordTags('incident', i.id, i.tags)}
-            </div>`;
-        }).join('');
+        body.innerHTML = incidentCards(incidents);
     });
+}
+
+// One renderer for the list, the filters and search, so a report card looks
+// the same however it was found.
+function incidentCards(incidents) {
+    return incidents.map(i => {
+        const sev = SEVERITY_LABELS[i.severity] || null;
+        return `
+        <div class="card mb-2" onclick="openIncidentDetail(${i.id})" style="cursor:pointer;">
+            <div class="card-header">
+                <div class="card-title">
+                    <div class="card-title-icon" style="background:rgba(99,102,241,.12);color:var(--accent-2);">📋</div>
+                    <span class="font-bold">${esc(i.title)}</span>
+                    ${sev ? `<span class="tag ${esc(sev.tag)}" style="margin-left:8px;">${esc(sev.label)}</span>` : ''}
+                    ${statusTag(i.status)}
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);">
+                    ${i.case_number ? esc(i.case_number) : '#' + i.id} · By ${esc(i.created_by_name)} · ${timeAgo(i.created_at)}
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-muted);">
+                <span>👮 ${(i.involved_officers||[]).length} officer(s)</span>
+                <span>👤 ${(i.involved_civilians||[]).length} civilian(s)</span>
+                <span style="margin-left:auto;" class="font-mono">${fmtDateShort(i.created_at)}</span>
+            </div>
+            ${renderRecordTags('incident', i.id, i.tags)}
+        </div>`;
+    }).join('');
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+// Case numbers, titles, narratives and authors, in one box. Debounced so it
+// searches thoughts, not keystrokes.
+let _incSearchTimer = null;
+
+function queueIncidentSearch() {
+    clearTimeout(_incSearchTimer);
+    _incSearchTimer = setTimeout(runIncidentSearch, 300);
+}
+
+async function runIncidentSearch() {
+    const input = document.getElementById('inc-search');
+    const body = document.getElementById('incidents-body');
+    if (!input || !body) return;
+
+    const query = input.value.trim();
+    if (query.length < 2) { loadIncidents('all'); return; }
+
+    body.innerHTML = `<div class="card mb-2">${skeletonLines(3)}</div>`;
+    const results = await nuiFetch('searchIncidents', query);
+
+    if (input.value.trim() !== query) return;   // they kept typing
+
+    if (!results || !results.length) {
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Nothing matched "${esc(query)}"</div><div class="empty-subtitle">Case numbers, titles, narratives and officers are all searched.</div></div>`;
+        return;
+    }
+    body.innerHTML = incidentCards(results);
 }
 
 async function openIncidentDetail(id) {
@@ -186,6 +224,18 @@ async function openIncidentDetail(id) {
             <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text-secondary);">${esc(incident.narrative)}</div>
             ${renderRecordTags('incident', incident.id, incident.tags)}
         </div>
+
+        <div class="card" style="margin-bottom:14px;">
+            <div class="card-header">
+                <div class="card-title">
+                    <div class="card-title-icon" style="background:rgba(245,165,36,.12);color:var(--yellow);">🗃</div>
+                    Evidence (${(incident.evidence || []).length})
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="openEvidenceModal(${incident.id})">+ Log Evidence</button>
+            </div>
+            ${renderEvidenceList(incident.evidence || [], incident.id)}
+        </div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="card">
                 <div class="card-header"><div class="card-title">Involved Civilians (${incident.involved_civilians.length})</div></div>
@@ -459,6 +509,11 @@ function printIncidentReport(id) {
         </div>
         <div class="label">Narrative</div>
         <div class="narrative">${esc(incident.narrative)}</div>
+        ${(incident.evidence || []).length ? `
+        <div class="label">Evidence</div>
+        <table><thead><tr><th>Type</th><th>Label</th><th>Details</th><th>Logged by</th></tr></thead><tbody>
+            ${incident.evidence.map(e => `<tr><td>${esc(e.kind)}</td><td>${esc(e.label)}</td><td>${esc(e.detail || '')}</td><td>${esc(e.logged_by_name)}</td></tr>`).join('')}
+        </tbody></table>` : ''}
         ${incident.involved_civilians.length ? `
         <div class="label">Involved Civilians</div>
         <table><thead><tr><th>Name</th><th>Citizen ID</th></tr></thead><tbody>
@@ -884,6 +939,101 @@ window.linkRecord                   = linkRecord;
 window.unlinkRecord                 = unlinkRecord;
 window.refreshLinkedRecordsDisplay  = refreshLinkedRecordsDisplay;
 
+const EVIDENCE_LOOK = {
+    photo: ['📷', 'Photo'],
+    item:  ['📦', 'Item'],
+    note:  ['📝', 'Note'],
+};
+
+function renderEvidenceList(list, incidentId) {
+    if (!list.length) return '<div class="text-muted text-sm">Nothing logged yet.</div>';
+
+    return list.map(e => {
+        const [icon, kindLabel] = EVIDENCE_LOOK[e.kind] || ['🗃', e.kind];
+        return `
+        <div style="padding:9px 0;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;">
+            ${e.kind === 'photo' && e.photo
+                ? `<img src="${esc(e.photo)}" alt="" style="width:84px;height:56px;object-fit:cover;border-radius:6px;flex-shrink:0;"
+                       onerror="this.style.display='none'">`
+                : `<div style="font-size:20px;flex-shrink:0;width:36px;text-align:center;">${icon}</div>`}
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;">
+                    ${esc(e.label)}
+                    <span class="tag tag-gray" style="margin-left:6px;font-size:9.5px;">${esc(kindLabel)}</span>
+                </div>
+                ${e.detail ? `<div class="text-muted text-sm" style="white-space:pre-wrap;">${esc(e.detail)}</div>` : ''}
+                <div class="text-muted" style="font-size:10.5px;margin-top:3px;">
+                    Logged by ${esc(e.logged_by_name)} · ${fmtDate(e.created_at)}
+                </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" title="Remove — your own within 15 minutes, or supervisor"
+                    onclick="removeEvidence(${e.id}, ${incidentId})">✕</button>
+        </div>`;
+    }).join('');
+}
+
+function openEvidenceModal(incidentId) {
+    const modal = createModal('Log Evidence', `
+        <div class="form-row">
+            <div class="form-group" style="flex:1;">
+                <label class="form-label">Type</label>
+                <select class="select" id="ev-kind" onchange="document.getElementById('ev-photo-row').style.display = this.value === 'photo' ? '' : 'none'">
+                    <option value="item">📦 Item</option>
+                    <option value="photo">📷 Photo</option>
+                    <option value="note">📝 Note</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex:2;">
+                <label class="form-label">Label</label>
+                <input class="input" id="ev-label" placeholder="e.g. 9mm casing, kerb outside the bank">
+            </div>
+        </div>
+        <div class="form-group" id="ev-photo-row" style="display:none;">
+            <label class="form-label">Photo URL</label>
+            <input class="input" id="ev-photo" placeholder="Direct image link (Discord CDN, Imgur…)">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Details</label>
+            <textarea class="textarea" id="ev-detail" style="min-height:90px;"
+                      placeholder="Where it was found, condition, anything a court would ask."></textarea>
+        </div>`,
+        async () => {
+            const kind = document.getElementById('ev-kind').value;
+            const label = document.getElementById('ev-label').value.trim();
+            if (!label) { showToast('Label needed', 'Say what the evidence is.', 'error'); return; }
+
+            const res = await nuiFetch('addEvidence', {
+                incidentId, kind, label,
+                detail: document.getElementById('ev-detail').value.trim(),
+                photo: document.getElementById('ev-photo')?.value.trim() || null,
+            });
+
+            if (res && res.ok) {
+                showToast('Evidence logged', label, 'success');
+                closeModal(modal);
+                openIncidentDetail(incidentId);
+            } else {
+                showToast('Not logged', (res && res.error) || 'The server refused it.', 'error');
+            }
+        }, 'Log It');
+}
+
+async function removeEvidence(id, incidentId) {
+    const res = await nuiFetch('deleteEvidence', { id });
+    if (res && res.ok) {
+        showToast('Evidence removed', '', 'success');
+        openIncidentDetail(incidentId);
+    } else {
+        showToast('Not removed', (res && res.error) || 'The server refused it.', 'error');
+    }
+}
+
+window.incidentCards          = incidentCards;
+window.queueIncidentSearch    = queueIncidentSearch;
+window.runIncidentSearch      = runIncidentSearch;
+window.renderEvidenceList     = renderEvidenceList;
+window.openEvidenceModal      = openEvidenceModal;
+window.removeEvidence         = removeEvidence;
 window.statusTag              = statusTag;
 window.statusControl          = statusControl;
 window.changeIncidentStatus   = changeIncidentStatus;
