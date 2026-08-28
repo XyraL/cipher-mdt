@@ -18,7 +18,10 @@ const MAP = {
     // The GTA world rectangle this render covers. If unit dots sit slightly off
     // where they should be, nudge these — stand somewhere recognisable, note
     // your coords with the map open, and adjust until the dot lands on you.
-    world: { minX: -3900, maxX: 4300, minY: -4500, maxY: 8100 },
+    // Calibrated against landmarks with known coordinates — the depot on
+    // Terminal Island, Sandy Shores airfield, Mount Chiliad, Paleto Bay. The
+    // old numbers put the trucking depot in the sea.
+    world: { minX: -4508, maxX: 5086, minY: -4891, maxY: 8317 },
 };
 
 // Mirrors the department colours in config.lua.
